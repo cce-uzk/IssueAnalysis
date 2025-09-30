@@ -1,0 +1,57 @@
+# Claude Code related files
+.claude/
+CLAUDE.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# PHP temporary files
+*.tmp
+*.bak
+*.backup
+
+# Log files
+*.log
+error_log
+
+# Development and test files
+test_*.php
+*_test.php
+debug_*.php
+tmp/
+temp/
+
+# Composer (if used)
+vendor/
+composer.lock
+
+# Node modules (if any JS tooling is added)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build artifacts
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Cache directories
+cache/
+.cache/

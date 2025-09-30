@@ -1,0 +1,175 @@
+// IssueAnalysis Plugin Language File (German)
+
+// Plugin Information
+plugin_title#:#Fehleranalyse
+plugin_description#:#Analyse und Verwaltung von System-Fehlerereignissen zur Überwachung der ILIAS-Installation und Diagnose von technischen Problemen
+
+// Menu and Navigation
+menu_fehleranalyse#:#Fehleranalyse
+tab_list#:#Fehlerliste
+tab_settings#:#Einstellungen
+tab_statistics#:#Statistiken
+back_to_list#:#Zurück zur Liste
+tab_view_details#:#Details anzeigen
+
+// Table Headers
+col_timestamp#:#Zeitstempel
+col_severity#:#Schweregrad
+col_message#:#Fehlermeldung
+col_file#:#Datei
+col_line#:#Zeile
+col_user#:#Benutzer
+col_analyzed#:#Analysiert
+col_actions#:#Aktionen
+
+// Severity Levels
+severity_error#:#Fehler
+severity_warning#:#Warnung
+severity_notice#:#Hinweis
+severity_fatal_error#:#Schwerwiegender Fehler
+severity_parse_error#:#Parse-Fehler
+
+// Buttons and Actions
+btn_import_now#:#Jetzt einlesen
+btn_export_csv#:#CSV-Export
+btn_export_json#:#JSON-Export
+btn_mark_analyzed#:#Als analysiert markieren
+btn_view_details#:#Details anzeigen
+btn_save_settings#:#Einstellungen speichern
+btn_reset_settings#:#Zurücksetzen
+btn_clear_all_data#:#Alle Daten löschen
+
+// Filters
+filter_severity#:#Schweregrad
+filter_from_date#:#Von Datum
+filter_to_date#:#Bis Datum
+filter_search#:#Suche in Nachrichten, Dateien und Codes
+filter_analyzed_all#:#Alle
+filter_analyzed_yes#:#Analysiert
+filter_analyzed_no#:#Nicht analysiert
+filter_user#:#Benutzer
+
+// Settings
+settings_retention_days#:#Aufbewahrungszeit (Tage)
+settings_max_records#:#Maximale Datensätze gesamt (Rolling Window)
+settings_mask_sensitive#:#Sensible Daten maskieren
+settings_cron_info_title#:#Automatischer Import (Cron Job)
+settings_cron_info_text#:#Cron Job "%s" (ID: %s) verfügbar unter Administration → Cron Jobs für automatischen Import.
+settings_import_time_limit#:#Zeitlimit pro Import (Sekunden)
+settings_import_line_limit#:#Einträge-Limit pro Import
+
+settings_retention_days_info#:#Fehlereinträge älter als die angegebene Anzahl von Tagen werden automatisch gelöscht (0 = deaktiviert)
+settings_max_records_info#:#Gesamtanzahl Fehlereinträge in der Datenbank - älteste werden gelöscht wenn Limit erreicht (0 = unbegrenzt)
+settings_mask_sensitive_info#:#Sensible Daten wie Passwörter und Tokens werden maskiert
+settings_import_time_limit_info#:#Maximale Ausführungszeit pro einzelnem Import-Vorgang
+settings_import_line_limit_info#:#Maximale Anzahl Fehlereinträge die pro Import-Vorgang verarbeitet werden (Performance-Schutz)
+
+// Messages
+msg_import_success#:#Import erfolgreich abgeschlossen: %d neue Einträge importiert, %d übersprungen
+msg_import_success_limit_reached#:#Import abgeschlossen: %d neue Einträge importiert, %d übersprungen. Import-Limit (%d) erreicht - weitere Einträge verfügbar
+msg_import_success_time_limit#:#Import abgeschlossen: %d neue Einträge importiert, %d übersprungen. Zeit-Limit erreicht - weitere Einträge verfügbar
+msg_import_with_errors#:#Import mit %d Fehlern abgeschlossen: %d importiert, %d übersprungen
+msg_import_no_new_entries#:#Import abgeschlossen: Keine neuen Einträge gefunden
+msg_import_failed#:#Import fehlgeschlagen: Fehler-Dateien konnten nicht verarbeitet werden
+msg_no_entries#:#Keine Fehlereinträge vorhanden
+msg_settings_saved#:#Einstellungen erfolgreich gespeichert
+msg_marked_analyzed#:#%d Einträge als analysiert markiert
+msg_export_success#:#Export erfolgreich erstellt
+msg_access_denied#:#Zugriff verweigert - Administrator-Rechte erforderlich
+msg_tracking_cleared#:#Datei-Tracking erfolgreich zurückgesetzt - Dateien werden beim nächsten Import neu eingelesen
+msg_all_data_cleared#:#Alle importierten Daten wurden erfolgreich gelöscht
+msg_clear_tracking_failed#:#Fehler beim Zurücksetzen des Datei-Trackings
+msg_clear_data_failed#:#Fehler beim Löschen aller Daten
+msg_entry_not_found#:#Fehlereintrag nicht gefunden
+msg_no_id_provided#:#Keine Eintrags-ID angegeben
+
+// Error Messages
+error_no_error_log_dir#:#Fehler-Log-Verzeichnis nicht konfiguriert
+error_import_failed#:#Import fehlgeschlagen
+error_export_failed#:#Export fehlgeschlagen
+error_invalid_settings#:#Ungültige Einstellungen
+error_database_error#:#Datenbankfehler
+
+// Detail View
+detail_title#:#Fehlerdetails
+detail_basic_info#:#Grundinformationen
+detail_stacktrace#:#Stack Trace
+detail_request_data#:#Request-Daten
+detail_context#:#Kontext
+detail_no_stacktrace#:#Kein Stack Trace verfügbar
+detail_no_request_data#:#Keine Request-Daten verfügbar
+detail_error_information#:#Fehlerinformationen
+detail_error_code#:#Fehlercode
+detail_timestamp#:#Zeitstempel
+detail_severity#:#Schweregrad
+detail_context_label#:#Kontext
+detail_file#:#Datei
+detail_full_error_content#:#Vollständiger Fehlerinhalt
+detail_characters#:#Zeichen
+detail_copy_original#:#Original kopieren
+detail_copy_safe_sharing#:#Sicher für Teilen kopieren
+detail_copy_safe_tooltip#:#Bereinigte Version kopieren, sicher zum Teilen (Pfade und sensible Daten durch Platzhalter ersetzt)
+detail_copied#:#Kopiert!
+detail_copy_failed#:#Kopieren fehlgeschlagen - Text manuell auswählen
+
+// Statistics
+stats_title#:#Statistiken
+stats_overview#:#Übersicht
+stats_total_entries#:#Gesamtanzahl Einträge
+stats_unique_files#:#Eindeutige Dateien mit Fehlern
+stats_unique_error_codes#:#Eindeutige Fehlercodes
+stats_by_severity#:#Nach Schweregrad
+stats_analyzed_entries#:#Analysierte Einträge
+stats_unanalyzed_entries#:#Nicht analysierte Einträge
+stats_timeranges#:#Fehleraktivität
+stats_last_24h#:#Letzte 24 Stunden
+stats_last_week#:#Letzte 7 Tage
+stats_last_month#:#Letzte 30 Tage
+stats_daily_activity#:#Tägliche Aktivität (letzte Woche)
+stats_top_error_files#:#Häufigste Fehlerdateien (letzte 30 Tage)
+stats_recent_error_files#:#Dateien mit aktuellen Fehlern (letzte 7 Tage)
+stats_frequent_error_codes#:#Häufigste Fehlercodes
+stats_error_trends#:#Fehlertrends
+stats_current_week#:#Aktuelle Woche
+stats_previous_week#:#Vorherige Woche
+stats_trend#:#Trend
+stats_critical_errors#:#Kritische Fehler
+stats_errors#:#Fehler
+stats_occurrences#:#Vorkommen
+stats_time_range#:#Zeitraum
+stats_time_today#:#Heute
+stats_time_yesterday#:#Gestern
+stats_time_last_week#:#Letzte Woche
+stats_time_last_month#:#Letzter Monat
+stats_time_last_3_months#:#Letzte 3 Monate
+stats_time_activity#:#Fehleraktivität über Zeit
+stats_time_period#:#Zeitraum
+stats_error_count#:#Fehleranzahl
+stats_severity_distribution#:#Schweregrad-Verteilung
+stats_top_error_files_chart#:#Top Fehlerdateien Diagramm
+stats_top_error_files_list#:#Fehlerdateien Details
+stats_file_name#:#Dateiname
+stats_no_data#:#Keine Daten verfügbar
+stats_time_range_title#:#Fehleraktivität über Zeit
+stats_severity_title#:#Schweregrad-Verteilung
+stats_files_title#:#Top Fehlerdateien
+chart_errors#:#Fehler
+chart_count#:#Anzahl
+table_total_entries#:#Gesamtanzahl Einträge (gefiltert)
+stats_latest#:#zuletzt
+
+// Pagination
+pagination_showing#:#Zeige %d bis %d von %d Einträgen
+pagination_no_entries#:#Keine Einträge gefunden
+
+// Time Formats
+time_just_now#:#Gerade eben
+time_minutes_ago#:#vor %d Minuten
+time_hours_ago#:#vor %d Stunden
+time_days_ago#:#vor %d Tagen
+
+// Validation Messages
+validation_retention_days#:#Aufbewahrungszeit muss zwischen 1 und 365 Tagen liegen
+validation_max_records#:#Maximale Anzahl Datensätze muss zwischen 100 und 100000 liegen
+validation_time_limit#:#Zeitlimit muss zwischen 30 und 600 Sekunden liegen
+validation_line_limit#:#Zeilenlimit muss zwischen 100 und 10000 liegen

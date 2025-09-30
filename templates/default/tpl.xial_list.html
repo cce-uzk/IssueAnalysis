@@ -1,0 +1,53 @@
+<!-- BEGIN xial_list -->
+<div class="ilXialList">
+    <!-- BEGIN import_section -->
+    <div class="ilXialImportSection" style="margin-bottom: 20px;">
+        <div class="ilXialImportButton">
+            <!-- IMPORT_BUTTON -->
+        </div>
+        <!-- BEGIN last_import -->
+        <div class="ilXialLastImport" style="margin-top: 10px; color: #666; font-size: 0.9em;">
+            <i class="fa fa-clock-o"></i> {TXT_LAST_IMPORT}: {LAST_IMPORT_TIME}
+        </div>
+        <!-- END last_import -->
+    </div>
+    <!-- END import_section -->
+
+    <!-- BEGIN filter_section -->
+    <div class="ilXialFilterSection" style="margin-bottom: 20px;">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h4 class="panel-title">
+                    <a data-toggle="collapse" href="#xialFilters" aria-expanded="false" aria-controls="xialFilters">
+                        <i class="fa fa-filter"></i> {TXT_FILTERS}
+                    </a>
+                </h4>
+            </div>
+            <div id="xialFilters" class="panel-collapse collapse">
+                <div class="panel-body">
+                    <!-- FILTER_FORM -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- END filter_section -->
+
+    <!-- BEGIN table_section -->
+    <div class="ilXialTableSection">
+        <!-- TABLE_CONTENT -->
+    </div>
+    <!-- END table_section -->
+
+    <!-- BEGIN no_entries -->
+    <div class="ilXialNoEntries" style="text-align: center; padding: 40px; color: #999;">
+        <i class="fa fa-info-circle fa-2x" style="margin-bottom: 15px;"></i>
+        <p>{TXT_NO_ENTRIES}</p>
+        <!-- BEGIN import_suggestion -->
+        <p style="margin-top: 15px;">
+            <small>{TXT_IMPORT_SUGGESTION}</small>
+        </p>
+        <!-- END import_suggestion -->
+    </div>
+    <!-- END no_entries -->
+</div>
+<!-- END xial_list -->

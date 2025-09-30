@@ -1,0 +1,233 @@
+<!-- BEGIN xial_detail -->
+<div class="ilXialDetail">
+    <!-- BEGIN navigation -->
+    <div class="ilXialNavigation" style="margin-bottom: 20px;">
+        <!-- BACK_BUTTON -->
+        <div class="pull-right">
+            <!-- EXPORT_BUTTONS -->
+        </div>
+        <div class="clearfix"></div>
+    </div>
+    <!-- END navigation -->
+
+    <!-- BEGIN basic_info -->
+    <div class="panel panel-primary">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-info-circle"></i> {TXT_BASIC_INFO}
+            </h3>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="dl-horizontal">
+                        <dt>{TXT_TIMESTAMP}:</dt>
+                        <dd>{TIMESTAMP}</dd>
+                        <dt>{TXT_SEVERITY}:</dt>
+                        <dd><span class="label label-{SEVERITY_CLASS}">{SEVERITY}</span></dd>
+                        <dt>{TXT_FILE}:</dt>
+                        <dd><code>{FILE}</code></dd>
+                        <dt>{TXT_LINE}:</dt>
+                        <dd>{LINE}</dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="dl-horizontal">
+                        <dt>{TXT_USER}:</dt>
+                        <dd>{USER}</dd>
+                        <dt>{TXT_CONTEXT}:</dt>
+                        <dd>{CONTEXT}</dd>
+                        <dt>{TXT_ANALYZED}:</dt>
+                        <dd>{ANALYZED_STATUS}</dd>
+                        <dt>ID:</dt>
+                        <dd>{LOG_ID}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- END basic_info -->
+
+    <!-- BEGIN message_section -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-exclamation-triangle"></i> {TXT_ERROR_MESSAGE}
+            </h3>
+        </div>
+        <div class="panel-body">
+            <div class="well" style="white-space: pre-wrap; word-wrap: break-word;">
+{ERROR_MESSAGE}
+            </div>
+        </div>
+    </div>
+    <!-- END message_section -->
+
+    <!-- BEGIN stacktrace_section -->
+    <div class="panel panel-info">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <a data-toggle="collapse" href="#stacktraceCollapse" aria-expanded="false" aria-controls="stacktraceCollapse">
+                    <i class="fa fa-list-ol"></i> {TXT_STACKTRACE}
+                    <i class="fa fa-chevron-down pull-right"></i>
+                </a>
+            </h3>
+        </div>
+        <div id="stacktraceCollapse" class="panel-collapse collapse">
+            <div class="panel-body">
+                <pre style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; background: #f8f8f8; border: 1px solid #ddd; padding: 15px;">{STACKTRACE}</pre>
+            </div>
+        </div>
+    </div>
+    <!-- END stacktrace_section -->
+
+    <!-- BEGIN stacktrace_empty -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-list-ol"></i> {TXT_STACKTRACE}
+            </h3>
+        </div>
+        <div class="panel-body">
+            <p class="text-muted">
+                <i class="fa fa-info-circle"></i> {TXT_NO_STACKTRACE}
+            </p>
+        </div>
+    </div>
+    <!-- END stacktrace_empty -->
+
+    <!-- BEGIN request_data_section -->
+    <div class="panel panel-warning">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <a data-toggle="collapse" href="#requestDataCollapse" aria-expanded="false" aria-controls="requestDataCollapse">
+                    <i class="fa fa-globe"></i> {TXT_REQUEST_DATA}
+                    <i class="fa fa-chevron-down pull-right"></i>
+                </a>
+            </h3>
+        </div>
+        <div id="requestDataCollapse" class="panel-collapse collapse">
+            <div class="panel-body">
+                <pre style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; background: #f8f8f8; border: 1px solid #ddd; padding: 15px;">{REQUEST_DATA}</pre>
+            </div>
+        </div>
+    </div>
+    <!-- END request_data_section -->
+
+    <!-- BEGIN request_data_empty -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-globe"></i> {TXT_REQUEST_DATA}
+            </h3>
+        </div>
+        <div class="panel-body">
+            <p class="text-muted">
+                <i class="fa fa-info-circle"></i> {TXT_NO_REQUEST_DATA}
+            </p>
+        </div>
+    </div>
+    <!-- END request_data_empty -->
+
+    <!-- BEGIN additional_info -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                <i class="fa fa-cogs"></i> {TXT_ADDITIONAL_INFO}
+            </h3>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <!-- BEGIN session_info -->
+                <div class="col-md-6">
+                    <h5>{TXT_SESSION_INFO}</h5>
+                    <dl class="dl-horizontal">
+                        <dt>{TXT_SESSION_ID}:</dt>
+                        <dd><code>{SESSION_ID}</code></dd>
+                        <dt>{TXT_IP_ADDRESS}:</dt>
+                        <dd><code>{IP_ADDRESS}</code></dd>
+                        <dt>{TXT_USER_AGENT}:</dt>
+                        <dd><small><code>{USER_AGENT_HASH}</code></small></dd>
+                    </dl>
+                </div>
+                <!-- END session_info -->
+
+                <!-- BEGIN metadata -->
+                <div class="col-md-6">
+                    <h5>{TXT_METADATA}</h5>
+                    <dl class="dl-horizontal">
+                        <dt>{TXT_ERROR_CODE}:</dt>
+                        <dd>{ERROR_CODE}</dd>
+                        <dt>{TXT_CREATED_AT}:</dt>
+                        <dd>{CREATED_AT}</dd>
+                        <dt>{TXT_ANALYZED_AT}:</dt>
+                        <dd>{ANALYZED_AT}</dd>
+                    </dl>
+                </div>
+                <!-- END metadata -->
+            </div>
+        </div>
+    </div>
+    <!-- END additional_info -->
+
+    <!-- BEGIN actions_section -->
+    <div class="ilXialActions" style="margin-top: 30px; text-align: center; border-top: 1px solid #eee; padding-top: 20px;">
+        <!-- ACTION_BUTTONS -->
+
+        <!-- BEGIN mark_analyzed -->
+        <div style="margin-top: 15px;">
+            <!-- MARK_ANALYZED_BUTTON -->
+        </div>
+        <!-- END mark_analyzed -->
+    </div>
+    <!-- END actions_section -->
+</div>
+
+<style>
+.ilXialDetail .panel-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.ilXialDetail .panel-title a:hover {
+    text-decoration: none;
+}
+
+.ilXialDetail .label-error,
+.ilXialDetail .label-fatal_error {
+    background-color: #d9534f;
+}
+
+.ilXialDetail .label-warning {
+    background-color: #f0ad4e;
+}
+
+.ilXialDetail .label-notice {
+    background-color: #5bc0de;
+}
+
+.ilXialDetail .label-parse_error {
+    background-color: #d9534f;
+}
+
+.ilXialDetail .dl-horizontal dt {
+    width: 120px;
+}
+
+.ilXialDetail .dl-horizontal dd {
+    margin-left: 140px;
+}
+
+@media (max-width: 767px) {
+    .ilXialDetail .dl-horizontal dt {
+        width: auto;
+        float: none;
+        text-align: left;
+    }
+
+    .ilXialDetail .dl-horizontal dd {
+        margin-left: 0;
+    }
+}
+</style>
+<!-- END xial_detail -->
