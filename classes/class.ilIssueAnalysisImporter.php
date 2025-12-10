@@ -31,7 +31,7 @@ class ilIssueAnalysisImporter
         $this->repo = new ilIssueAnalysisRepo();
         $this->settings = new ilIssueAnalysisSettings();
         $this->sanitizer = new ilIssueAnalysisSanitizer($this->settings->getMaskSensitive());
-        $this->logger = $DIC->logger()->comp('xial');
+        $this->logger = $DIC->logger()->xial();
     }
 
     /**
