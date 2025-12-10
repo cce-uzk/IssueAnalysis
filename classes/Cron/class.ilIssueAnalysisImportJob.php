@@ -26,7 +26,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
 
         $this->settings = new ilIssueAnalysisSettings();
         $this->importer = new ilIssueAnalysisImporter();
-        $this->logger = $DIC->logger()->comp('xial');
+        $this->logger = $DIC->logger()->xial();
     }
 
     /**
