@@ -28,8 +28,16 @@ The IssueAnalysis plugin is a UIComponent UserInterfaceHook plugin for ILIAS 9 t
 - **Automated log import** from ILIAS error log directory
 - **Manual import** with "Import Now" button
 - **Incremental import** with file tracking to prevent duplicate imports
+- **Hash-based deduplication** groups identical errors by stacktrace signature
 - **Retention-aware import** (only imports entries within retention period)
 - **Performance limits** with configurable time and line limits
+
+### Error Type Management
+- **Intelligent deduplication** using SHA-256 stacktrace hashing
+- **Hide/show error types** to focus on relevant issues
+- **Occurrence counting** shows how often each error type has occurred
+- **First/last seen timestamps** for each unique error type
+- **Admin notes** to document known issues or fixes
 
 ### Advanced Analysis Interface
 - **Modern ILIAS UI table** with sorting, pagination, and comprehensive filtering
@@ -167,6 +175,12 @@ The plugin provides comprehensive filtering options:
 - **Pagination**: Navigate through large result sets with configurable page sizes
 - **Export Options**: Export filtered data to CSV or JSON formats
 
+#### Error Type Management
+- **Hide Error Types**: Click "Hide" on any error to hide all occurrences of that error type
+- **Show Hidden**: Toggle "Show hidden" filter to view previously hidden errors
+- **Unhide**: Re-enable hidden error types from the list
+- **Bulk Management**: Hiding one error automatically hides all identical errors (same stacktrace)
+
 ### Automated Import (Cron Job)
 
 #### Setting Up Automated Import
@@ -185,11 +199,29 @@ The plugin provides comprehensive filtering options:
 
 ### Database Architecture
 
-The plugin uses a three-table architecture optimized for performance and scalability:
+The plugin uses a three-table architecture optimized for performance, deduplication, and scalability:
 
-- **`xial_log`**: Primary error entries containing timestamp, severity, message, file path, user information, and error codes
-- **`xial_detail`**: Detailed error information including stack traces and request data (separated for performance optimization)
+- **`xial_log`**: Individual error log entries containing timestamp, severity, message (truncated), file path, user information, error codes, and a reference to the error type via `stacktrace_hash`
+- **`xial_error`**: Unique error types identified by stacktrace hash. Contains full error message, occurrence count, first/last seen timestamps, and ignore status for hiding known issues
 - **`xial_source`**: File tracking system for incremental import functionality (prevents duplicate processing)
+
+### Hash-Based Deduplication
+
+The plugin uses SHA-256 hashing of stacktraces to identify identical errors:
+
+- **Same stacktrace = same error type**: Errors with identical stacktraces are grouped together
+- **Occurrence tracking**: Each error type tracks how many times it has occurred
+- **Storage efficiency**: Full stacktrace stored once per error type, not per occurrence
+- **Quick filtering**: Hide entire error types with a single click
+
+### Lazy Loading Strategy
+
+To minimize database storage and improve performance, detailed error content is loaded on-demand:
+
+- **Stacktrace loading**: Full stacktrace is loaded from the original error log file when viewing details
+- **Fallback mechanism**: If the original file is deleted/rotated, the stacktrace from `xial_error` is used
+- **Request data**: Original request data (GET, POST, cookies) only available from original files
+- **Storage savings**: ~98% reduction in database storage compared to storing full content
 
 ### Automated Data Retention
 
@@ -336,7 +368,10 @@ The IssueAnalysis plugin follows modern ILIAS 9 design patterns and best practic
 ```
 IssueAnalysis/
 ├── plugin.php                                      # Plugin definition and metadata
+├── composer.json                                   # PSR-4 autoloading configuration
+├── vendor/                                         # Composer dependencies (committed)
 ├── classes/
+│   ├── bootstrap.php                              # Composer autoloader initialization
 │   ├── class.ilIssueAnalysisPlugin.php            # Main plugin class with cron provider
 │   ├── class.ilIssueAnalysisGUI.php               # Primary interface controller
 │   ├── class.ilIssueAnalysisAdminGUI.php          # Administration interface
@@ -352,6 +387,13 @@ IssueAnalysis/
 │   └── Cron/
 │       ├── class.ilIssueAnalysisImportJob.php     # Automated import cron job
 │       └── class.ilIssueAnalysisCronJobFactory.php # Cron job factory pattern
+├── src/
+│   ├── Service/
+│   │   ├── StringTruncator.php                    # Safe string truncation for DB fields
+│   │   └── DoubleSubmissionGuard.php              # CSRF/double-submit protection
+│   └── Exception/
+│       ├── IssueAnalysisException.php             # Base exception class
+│       └── ImportException.php                    # Import-specific exceptions
 ├── sql/
 │   └── dbupdate.php                                # Database schema and migrations
 ├── lang/
@@ -360,6 +402,48 @@ IssueAnalysis/
 └── templates/
     └── images/
         └── icon_issueanalysis.svg                 # Plugin icon (SVG format)
+```
+
+### Database Schema
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ xial_error (Unique Error Types)                             │
+├─────────────────────────────────────────────────────────────┤
+│ stacktrace_hash (PK)  │ SHA-256 hash of stacktrace          │
+│ message               │ Full error message (CLOB)           │
+│ file, line, severity  │ Error location and level            │
+│ first_seen, last_seen │ Temporal tracking                   │
+│ occurrence_count      │ Number of occurrences               │
+│ ignored               │ Hide flag (0/1)                     │
+│ ignored_at, ignored_by│ Admin who hid the error             │
+│ note                  │ Admin notes                         │
+└─────────────────────────────────────────────────────────────┘
+                              │ 1:N
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ xial_log (Individual Error Occurrences)                     │
+├─────────────────────────────────────────────────────────────┤
+│ id (PK)               │ Auto-increment ID                   │
+│ stacktrace_hash (FK)  │ Reference to error type             │
+│ code                  │ Original error code (e.g. 00037_8216)│
+│ timestamp             │ When the error occurred             │
+│ severity, message     │ Error level and truncated message   │
+│ file, line            │ Error location                      │
+│ user_id, session_id   │ User context                        │
+│ ip_address            │ Client IP (masked)                  │
+│ context               │ Additional context                  │
+│ analyzed              │ Analysis flag                       │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ xial_source (File Tracking)                                 │
+├─────────────────────────────────────────────────────────────┤
+│ file_path (PK)        │ Path to error log file              │
+│ file_inode            │ Inode for rotation detection        │
+│ last_offset           │ Last read position                  │
+│ last_check            │ Last import timestamp               │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Performance Optimizations
@@ -371,10 +455,12 @@ IssueAnalysis/
 - **Retention-Aware Import**: Skips entries outside retention window to improve efficiency
 
 #### Database Performance
-- **Optimized Schema**: Indexed columns for common query patterns (timestamp, severity, file)
-- **Lazy Loading**: Detailed error information loaded only when explicitly requested
-- **Query Optimization**: Efficient filtering and pagination queries
-- **Automatic Cleanup**: Retention system prevents database bloat
+- **Optimized Schema**: Indexed columns for common query patterns (timestamp, severity, stacktrace_hash)
+- **Hash-Based Deduplication**: Identical errors stored once, referenced by hash
+- **Lazy Loading**: Full stacktrace and request data loaded from original files on demand
+- **Minimal Storage**: Only essential metadata stored in database (~2KB per entry vs ~100KB without optimization)
+- **Query Optimization**: Efficient filtering and pagination queries with JOIN to error types
+- **Automatic Cleanup**: Retention system cleans up both log entries and orphaned error types
 
 #### Memory Management
 - **Stream Processing**: Large log files processed in chunks rather than loaded entirely
@@ -474,7 +560,7 @@ This plugin is released under the **GNU General Public License v3 (GPL v3)**, ma
 
 ### Plugin Metadata
 - **Plugin ID**: `xial`
-- **Version**: 1.0.0
+- **Version**: 1.2.0
 - **Compatibility**: ILIAS 9.0 - 9.999
 - **Maintained by**: University of Cologne Computing Centre
 - **Repository**: https://github.com/cce-uzk/IssueAnalysis
