@@ -33,9 +33,6 @@ test_*.php
 debug_*.php
 tmp/
 temp/
-
-# Composer (if used)
-vendor/
 composer.lock
 
 # Node modules (if any JS tooling is added)
