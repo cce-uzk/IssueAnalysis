@@ -1,5 +1,8 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Data table component for displaying ILIAS error log entries
  *
@@ -7,7 +10,6 @@
  * for viewing imported error log data with clickable error codes.
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisTableGUI
 {
@@ -62,19 +64,21 @@ class ilIssueAnalysisTableGUI
     {
         // Define columns with appropriate sorting
         $columns = [
-            'timestamp' => $this->ui_factory->table()->column()->text('Zeitstempel')
+            'timestamp' => $this->ui_factory->table()->column()->text($this->plugin->txt('col_timestamp'))
                 ->withIsSortable(true),
-            'code' => $this->ui_factory->table()->column()->text('Error Code')
-                ->withIsSortable(true),   // Error codes can be sorted alphabetically
-            'level' => $this->ui_factory->table()->column()->text('Level')
+            'code' => $this->ui_factory->table()->column()->text($this->plugin->txt('detail_error_code'))
+                ->withIsSortable(true),
+            'status' => $this->ui_factory->table()->column()->statusIcon($this->plugin->txt('col_status'))
+                ->withIsSortable(true),
+            'level' => $this->ui_factory->table()->column()->text($this->plugin->txt('col_severity'))
                 ->withIsOptional(true)
-                ->withIsSortable(true),   // Severity levels can be sorted
-            'message' => $this->ui_factory->table()->column()->text('Nachricht')
+                ->withIsSortable(true),
+            'message' => $this->ui_factory->table()->column()->text($this->plugin->txt('col_message'))
                 ->withIsOptional(true)
-                ->withIsSortable(true),   // Messages can be sorted alphabetically
-            'file' => $this->ui_factory->table()->column()->text('Datei')
+                ->withIsSortable(true),
+            'file' => $this->ui_factory->table()->column()->text($this->plugin->txt('col_file'))
                 ->withIsOptional(true)
-                ->withIsSortable(true)    // File paths can be sorted alphabetically
+                ->withIsSortable(true)
         ];
 
         // Build table with actions
@@ -120,6 +124,16 @@ class ilIssueAnalysisTableGUI
                 $this->plugin->txt('btn_view_details'),
                 $url_builder->withParameter($action_parameter_token, 'viewDetails'),
                 $row_id_token
+            ),
+            'ignoreHash' => $this->ui_factory->table()->action()->single(
+                $this->plugin->txt('btn_ignore_error_type'),
+                $url_builder->withParameter($action_parameter_token, 'ignoreHash'),
+                $row_id_token
+            ),
+            'unignoreHash' => $this->ui_factory->table()->action()->single(
+                $this->plugin->txt('btn_unignore_error_type'),
+                $url_builder->withParameter($action_parameter_token, 'unignoreHash'),
+                $row_id_token
             )
         ];
     }
@@ -132,11 +146,17 @@ class ilIssueAnalysisTableGUI
 class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\DataRetrieval
 {
     private ilIssueAnalysisRepo $repo;
+    private \ILIAS\UI\Factory $ui_factory;
+    private ilLanguage $lng;
 
     public function __construct()
     {
+        global $DIC;
+
         require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
         $this->repo = new ilIssueAnalysisRepo();
+        $this->ui_factory = $DIC->ui()->factory();
+        $this->lng = $DIC->language();
     }
 
     public function getRows(
@@ -149,6 +169,7 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
     ): \Generator {
         // Convert filter data to repo format
         $filter = [];
+        $showIgnored = false;
 
         // Check for session filter data (from filter form)
         $session_filter = $_SESSION['xial_filter'] ?? null;
@@ -167,6 +188,10 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             }
             if (!empty($session_filter['to_date'])) {
                 $filter['to_date'] = $session_filter['to_date'];
+            }
+            // NEW: Check for show_ignored filter (select with '0' or '1')
+            if (isset($session_filter['show_ignored'])) {
+                $showIgnored = ($session_filter['show_ignored'] === '1' || $session_filter['show_ignored'] === 1);
             }
         }
 
@@ -197,21 +222,33 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             }
         }
 
-        // Get entries from database
+        // Get entries from database (with showIgnored parameter)
         $entries = $this->repo->getLogEntries(
             $filter,
             $range->getStart(),
             $range->getLength(),
-            $repoOrder
+            $repoOrder,
+            $showIgnored
         );
 
         foreach ($entries as $entry) {
             // Create details link using administration context
             $detailsLink = 'ilias.php?baseClass=iladministrationgui&cmdClass=ilIssueAnalysisAdminGUI&cmd=viewDetails&ref_id=' . SYSTEM_FOLDER_ID . '&id=' . $entry['id'];
 
+            // Status icon: checkmark if visible, X if ignored/hidden using ILIAS standard icons
+            $isIgnored = isset($entry['error_ignored']) && $entry['error_ignored'] == 1;
+            $statusIcon = $this->ui_factory->symbol()->icon()->custom(
+                $isIgnored ?
+                    ilUtil::getImagePath('standard/icon_not_ok.svg') :
+                    ilUtil::getImagePath('standard/icon_ok.svg'),
+                $isIgnored ? $this->lng->txt('inactive') : $this->lng->txt('active'),
+                \ILIAS\UI\Component\Symbol\Icon\Icon::SMALL
+            );
+
             $row_data = [
                 'timestamp' => $entry['timestamp'],
                 'code' => '<a href="' . $detailsLink . '" style="color: #007cba; text-decoration: underline;">' . ($entry['code'] ?: '-') . '</a>',
+                'status' => $statusIcon,
                 'level' => strtoupper($entry['severity']),
                 'message' => mb_substr($entry['message'], 0, 100) . (mb_strlen($entry['message']) > 100 ? '...' : ''),
                 'file' => $entry['file'] ? $entry['file'] . ($entry['line'] ? ':' . $entry['line'] : '') : '-'
@@ -230,6 +267,7 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
     ): ?int {
         // Convert filter data to repo format (same logic as getRows)
         $filter = [];
+        $showIgnored = false;
 
         // Check for session filter data (from filter form)
         $session_filter = $_SESSION['xial_filter'] ?? null;
@@ -249,6 +287,10 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             if (!empty($session_filter['to_date'])) {
                 $filter['to_date'] = $session_filter['to_date'];
             }
+            // NEW: Check for show_ignored filter (select with '0' or '1')
+            if (isset($session_filter['show_ignored'])) {
+                $showIgnored = ($session_filter['show_ignored'] === '1' || $session_filter['show_ignored'] === 1);
+            }
         }
 
         // Also check table filter_data parameter (for future compatibility)
@@ -261,6 +303,6 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             }
         }
 
-        return $this->repo->countLogEntries($filter);
+        return $this->repo->countLogEntries($filter, $showIgnored);
     }
 }

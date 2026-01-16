@@ -4,7 +4,7 @@
 $id = "xial";
 
 // code version
-$version = "1.0.0";
+$version = "1.2.0";
 
 // ilias min and max version
 $ilias_min_version = "9.0";

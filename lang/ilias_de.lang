@@ -14,6 +14,7 @@ tab_view_details#:#Details anzeigen
 
 // Table Headers
 col_timestamp#:#Zeitstempel
+col_status#:#Status
 col_severity#:#Schweregrad
 col_message#:#Fehlermeldung
 col_file#:#Datei
@@ -21,6 +22,8 @@ col_line#:#Zeile
 col_user#:#Benutzer
 col_analyzed#:#Analysiert
 col_actions#:#Aktionen
+status_visible#:#Sichtbar
+status_hidden#:#Ausgeblendet
 
 // Severity Levels
 severity_error#:#Fehler
@@ -38,6 +41,8 @@ btn_view_details#:#Details anzeigen
 btn_save_settings#:#Einstellungen speichern
 btn_reset_settings#:#Zurücksetzen
 btn_clear_all_data#:#Alle Daten löschen
+btn_ignore_error_type#:#Fehlertyp ausblenden
+btn_unignore_error_type#:#Fehlertyp einblenden
 
 // Filters
 filter_severity#:#Schweregrad
@@ -48,6 +53,9 @@ filter_analyzed_all#:#Alle
 filter_analyzed_yes#:#Analysiert
 filter_analyzed_no#:#Nicht analysiert
 filter_user#:#Benutzer
+filter_show_ignored#:#Ausgeblendete Fehler
+filter_show_ignored_yes#:#Anzeigen
+filter_show_ignored_no#:#Verbergen (Standard)
 
 // Settings
 settings_retention_days#:#Aufbewahrungszeit (Tage)
@@ -82,6 +90,10 @@ msg_clear_tracking_failed#:#Fehler beim Zurücksetzen des Datei-Trackings
 msg_clear_data_failed#:#Fehler beim Löschen aller Daten
 msg_entry_not_found#:#Fehlereintrag nicht gefunden
 msg_no_id_provided#:#Keine Eintrags-ID angegeben
+msg_error_type_ignored#:#Fehlertyp erfolgreich ausgeblendet - alle Fehler mit gleichem Stacktrace werden nicht mehr angezeigt
+msg_error_type_ignore_failed#:#Fehlertyp konnte nicht ausgeblendet werden
+msg_error_type_unignored#:#Fehlertyp erfolgreich eingeblendet - alle Fehler mit diesem Stacktrace werden wieder angezeigt
+msg_error_type_unignore_failed#:#Fehlertyp konnte nicht eingeblendet werden
 
 // Error Messages
 error_no_error_log_dir#:#Fehler-Log-Verzeichnis nicht konfiguriert
@@ -104,6 +116,9 @@ detail_timestamp#:#Zeitstempel
 detail_severity#:#Schweregrad
 detail_context_label#:#Kontext
 detail_file#:#Datei
+detail_original_file#:#Original-Datei
+detail_file_available#:#Verfügbar (Lazy-Loading aktiv)
+detail_file_not_available#:#Nicht mehr verfügbar (nur DB-Daten)
 detail_full_error_content#:#Vollständiger Fehlerinhalt
 detail_characters#:#Zeichen
 detail_copy_original#:#Original kopieren
@@ -150,6 +165,7 @@ stats_top_error_files_chart#:#Top Fehlerdateien Diagramm
 stats_top_error_files_list#:#Fehlerdateien Details
 stats_file_name#:#Dateiname
 stats_no_data#:#Keine Daten verfügbar
+stats_error_messages#:#Fehlermeldungen
 stats_time_range_title#:#Fehleraktivität über Zeit
 stats_severity_title#:#Schweregrad-Verteilung
 stats_files_title#:#Top Fehlerdateien
@@ -173,3 +189,23 @@ validation_retention_days#:#Aufbewahrungszeit muss zwischen 1 und 365 Tagen lieg
 validation_max_records#:#Maximale Anzahl Datensätze muss zwischen 100 und 100000 liegen
 validation_time_limit#:#Zeitlimit muss zwischen 30 und 600 Sekunden liegen
 validation_line_limit#:#Zeilenlimit muss zwischen 100 und 10000 liegen
+
+// Cron Job
+cron_job_title#:#IssueAnalysis Log-Import
+cron_job_description#:#Importiert Fehlerlog-Einträge aus ILIAS-Fehlerdateien in die IssueAnalysis-Plugin-Datenbank
+cron_status_time_limit#:#Zeitlimit
+cron_status_seconds#:#Sekunden
+cron_status_line_limit#:#Zeilenlimit
+cron_status_lines#:#Zeilen
+cron_status_error_log_dir#:#Fehlerlog-Verzeichnis
+cron_status_not_configured#:#Nicht konfiguriert
+cron_status_last_run#:#Letzter Lauf
+cron_status_never#:#Nie
+cron_activation_description#:#Dieser Cron-Job importiert Fehlerlog-Einträge aus dem konfigurierten ILIAS-Fehlerlog-Verzeichnis. Er kann über die ILIAS-Cron-Job-Administration aktiviert/deaktiviert werden. Wenn aktiv, läuft er regelmäßig, um neue Fehlereinträge für die Analyse in die Plugin-Datenbank zu importieren.
+cron_manual_start_description#:#Startet den Fehlerlog-Importprozess manuell. Dies importiert neue Fehlereinträge aus dem konfigurierten Log-Verzeichnis gemäß den Plugin-Einstellungen (Zeitlimits, Zeilenlimits usw.).
+
+// Additional Messages
+msg_invalid_form_data#:#Ungültige Formulardaten
+msg_invalid_token#:#Ungültiges oder abgelaufenes Sicherheitstoken. Bitte versuchen Sie es erneut.
+msg_import_running#:#Import läuft bereits. Bitte warten Sie einen Moment.
+msg_operation_running#:#Vorgang läuft bereits. Bitte warten Sie einen Moment.

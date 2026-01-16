@@ -12,7 +12,6 @@ use ILIAS\MainMenu\Provider\StandardTopItemsProvider;
  * Adds Issue Analysis as sub-item under Administration menu
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisMainBarProvider extends AbstractStaticMainMenuPluginProvider
 {

@@ -1,11 +1,13 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/../bootstrap.php';
+
 /**
  * Cron job factory for IssueAnalysis plugin
  * Provides cron jobs for the plugin
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisCronJobFactory
 {

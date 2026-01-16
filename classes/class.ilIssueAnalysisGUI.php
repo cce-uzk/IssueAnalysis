@@ -1,10 +1,12 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Main GUI controller for IssueAnalysis plugin
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  *
  * @ilCtrl_IsCalledBy ilIssueAnalysisGUI: ilIssueAnalysisConfigGUI
  * @ilCtrl_IsCalledBy ilIssueAnalysisGUI: ilIssueAnalysisUIHookGUI
@@ -140,17 +142,23 @@ class ilIssueAnalysisGUI
         // Set custom page title
         $this->tpl->setTitle($this->plugin->txt('plugin_title'));
 
-        // Import button - handle within current context
+        // Import button - handle within current context with double-submission prevention
+        $import_token = \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::generateToken('import');
+        $this->ctrl->setParameter($this, 'token', $import_token);
         $import_button = $this->ui_factory->button()->primary(
             $this->plugin->txt('btn_import_now'),
             $this->ctrl->getLinkTarget($this, 'importNow')
         );
+        $this->ctrl->setParameter($this, 'token', '');
 
-        // Clear all data button
+        // Clear all data button with double-submission prevention
+        $clear_token = \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::generateToken('clearData');
+        $this->ctrl->setParameter($this, 'token', $clear_token);
         $clear_button = $this->ui_factory->button()->standard(
             $this->plugin->txt('btn_clear_all_data'),
             $this->ctrl->getLinkTarget($this, 'clearAllData')
         );
+        $this->ctrl->setParameter($this, 'token', '');
 
         // Create professional filter using ILIAS Filter Service
         $filter_ui = $this->createProfessionalFilter();
@@ -243,6 +251,17 @@ class ilIssueAnalysisGUI
             $this->plugin->txt('filter_search')
         );
 
+        // NEW: Show ignored errors as select (checkbox doesn't work in filter)
+        $show_ignored_options = [
+            '0' => $this->plugin->txt('filter_show_ignored_no'),
+            '1' => $this->plugin->txt('filter_show_ignored_yes')
+        ];
+
+        $filter_items['show_ignored'] = $this->ui_factory->input()->field()->select(
+            $this->plugin->txt('filter_show_ignored'),
+            $show_ignored_options
+        )->withValue('0'); // Default: don't show ignored
+
         return $filter_items;
     }
 
@@ -253,7 +272,23 @@ class ilIssueAnalysisGUI
      */
     private function importNow(): void
     {
+        // Prevent double submission
+        $token = $_GET['token'] ?? '';
+        if (!\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::validateAndConsumeToken('import', $token)) {
+            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_invalid_token'));
+            $this->ctrl->redirect($this, 'showList');
+            return;
+        }
+
+        // Additional cooldown check (prevents rapid re-clicks even with new tokens)
+        if (\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::isInCooldown('import', 5)) {
+            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('msg_import_running'));
+            $this->ctrl->redirect($this, 'showList');
+            return;
+        }
+
         try {
+            \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::markExecuted('import');
             $result = $this->importer->importLogs(false);
 
             if ($result['success'] || $result['imported'] > 0) {
@@ -289,12 +324,6 @@ class ilIssueAnalysisGUI
                             $result['imported'],
                             $result['skipped']
                         );
-
-                        // Temporary debug: Show first few debug messages
-                        if (isset($result['error_messages']) && is_array($result['error_messages'])) {
-                            $debugMessages = array_slice($result['error_messages'], 0, 3);
-                            $message .= '<br><br>DEBUG: ' . implode('<br>', $debugMessages);
-                        }
 
                         $this->tpl->setOnScreenMessage('success', $message);
                     }
@@ -334,7 +363,23 @@ class ilIssueAnalysisGUI
      */
     private function clearAllData(): void
     {
+        // Prevent double submission
+        $token = $_GET['token'] ?? '';
+        if (!\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::validateAndConsumeToken('clearData', $token)) {
+            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_invalid_token'));
+            $this->ctrl->redirect($this, 'showList');
+            return;
+        }
+
+        // Additional cooldown check
+        if (\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::isInCooldown('clearData', 5)) {
+            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('msg_operation_running'));
+            $this->ctrl->redirect($this, 'showList');
+            return;
+        }
+
         try {
+            \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::markExecuted('clearData');
             $this->repo->clearAllData();
             $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_all_data_cleared'));
         } catch (Exception $e) {
@@ -370,11 +415,47 @@ class ilIssueAnalysisGUI
                 }
                 break;
 
+            case 'ignoreHash':
+                // NEW: Ignore all errors of this type
+                if (count($ids) === 1) {
+                    global $DIC;
+                    $userId = $DIC->user()->getId();
+
+                    // Get stacktrace_hash for this error code
+                    $hash = $this->repo->getHashForErrorCode($this->repo->getLogEntry($ids[0])['code'] ?? '');
+
+                    if ($hash) {
+                        $this->repo->ignoreHash($hash, $userId);
+                        $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_error_type_ignored'));
+                    } else {
+                        $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_error_type_ignore_failed'));
+                    }
+                }
+                break;
+
+            case 'unignoreHash':
+                // NEW: Un-ignore all errors of this type (make visible again)
+                if (count($ids) === 1) {
+                    global $DIC;
+                    $userId = $DIC->user()->getId();
+
+                    // Get stacktrace_hash for this error code
+                    $hash = $this->repo->getHashForErrorCode($this->repo->getLogEntry($ids[0])['code'] ?? '');
+
+                    if ($hash) {
+                        $this->repo->unignoreHash($hash);
+                        $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_error_type_unignored'));
+                    } else {
+                        $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_error_type_unignore_failed'));
+                    }
+                }
+                break;
+
             case 'copyToClipboard':
                 if (count($ids) === 1) {
                     $entry = $this->repo->getLogEntry($ids[0]);
                     if ($entry && $entry['code']) {
-                        $this->tpl->setOnScreenMessage('info', 'Error Code: ' . $entry['code'] . ' (use Ctrl+C to copy)');
+                        $this->tpl->setOnScreenMessage('info', $this->plugin->txt('detail_error_code') . ': ' . $entry['code']);
                     }
                 }
                 break;
@@ -422,7 +503,10 @@ class ilIssueAnalysisGUI
         );
         $this->tabs->setTabActive('view_details');
 
-        $entry = $this->repo->getLogEntry($id);
+        // NEW: Use lazy-loading to get full content from original file
+        $errorLogDir = $this->settings->getErrorLogDirectory();
+        $entry = $this->repo->getLogEntryWithFullContent($id, $errorLogDir);
+
         if (!$entry) {
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_entry_not_found'));
             $this->ctrl->redirect($this, 'showList');
@@ -444,6 +528,13 @@ class ilIssueAnalysisGUI
             $basic_info[$this->plugin->txt('detail_file')] = $entry['file'] . ($entry['line'] ? ':' . $entry['line'] : '');
         }
 
+        // Add file availability indicator
+        if (isset($entry['file_available'])) {
+            $basic_info[$this->plugin->txt('detail_original_file')] = $entry['file_available']
+                ? $this->plugin->txt('detail_file_available')
+                : $this->plugin->txt('detail_file_not_available');
+        }
+
         $basic_info_items = [];
         foreach ($basic_info as $label => $value) {
             $basic_info_items[$label] = (string) $value;
@@ -454,11 +545,13 @@ class ilIssueAnalysisGUI
             [$this->ui_factory->listing()->descriptive($basic_info_items)]
         );
 
-        // Determine full error content from available data
+        // Determine full error content from available data (with lazy-loading)
         $fullErrorContent = '';
 
-        // Use stacktrace first (contains complete error file content), fallback to message
-        if (!empty($entry['stacktrace'])) {
+        // Prefer full_stacktrace from lazy-loaded file, fallback to database
+        if (!empty($entry['full_stacktrace'])) {
+            $fullErrorContent = $entry['full_stacktrace'];
+        } elseif (!empty($entry['stacktrace'])) {
             $fullErrorContent = $entry['stacktrace'];
         } elseif (!empty($entry['message'])) {
             $fullErrorContent = $entry['message'];
@@ -498,21 +591,14 @@ class ilIssueAnalysisGUI
                 function copyErrorContent(contentId, button) {
                     var content = document.getElementById(contentId);
                     if (!content) {
-                        console.error("Element not found: " + contentId);
-                        button.textContent = "Element not found";
                         return;
                     }
 
-                    console.log("Copying content from element:", contentId, "Length:", content.textContent.length);
-
-                    // Store original button text and style
                     var originalText = button.textContent;
                     var originalBackground = button.style.background;
 
-                    // Try modern clipboard API first
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(content.textContent).then(function() {
-                            console.log("Clipboard API success");
                             button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copied')) . '";
                             button.style.background = "#28a745";
                             setTimeout(function() {
@@ -520,22 +606,15 @@ class ilIssueAnalysisGUI
                                 button.style.background = originalBackground;
                             }, 2000);
                         }).catch(function(err) {
-                            console.error("Clipboard API failed:", err);
-                            // Fallback to selection method
                             fallbackCopy(content, button, originalText, originalBackground);
                         });
                     } else {
-                        console.log("Clipboard API not available, using fallback");
-                        // Fallback for older browsers
                         fallbackCopy(content, button, originalText, originalBackground);
                     }
                 }
 
                 function fallbackCopy(content, button, originalText, originalBackground) {
                     try {
-                        console.log("Using fallback copy method");
-
-                        // Make element temporarily visible for selection
                         var wasHidden = content.style.display === "none";
                         if (wasHidden) {
                             content.style.display = "block";
@@ -552,14 +631,11 @@ class ilIssueAnalysisGUI
                         var success = document.execCommand("copy");
                         selection.removeAllRanges();
 
-                        // Hide element again if it was hidden
                         if (wasHidden) {
                             content.style.display = "none";
                             content.style.position = "";
                             content.style.left = "";
                         }
-
-                        console.log("Fallback copy result:", success);
 
                         if (success) {
                             button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copied')) . '";
@@ -576,8 +652,7 @@ class ilIssueAnalysisGUI
                             }, 3000);
                         }
                     } catch (e) {
-                        console.error("Fallback copy failed:", e);
-                        button.textContent = "Copy failed - select text manually";
+                        button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copy_failed')) . '";
                         setTimeout(function() {
                             button.textContent = originalText;
                             button.style.background = originalBackground;
@@ -691,8 +766,8 @@ class ilIssueAnalysisGUI
                     $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_settings_saved'));
                     $this->ctrl->redirect($this, 'showSettings');
                 } else {
-                    foreach ($errors as $error) {
-                        $this->tpl->setOnScreenMessage('failure', $error);
+                    foreach ($errors as $errorKey) {
+                        $this->tpl->setOnScreenMessage('failure', $this->plugin->txt($errorKey));
                     }
                 }
             }
@@ -786,11 +861,11 @@ class ilIssueAnalysisGUI
                         $diff = $now->diff($latest);
 
                         if ($diff->days > 0) {
-                            $time_ago = 'vor ' . $diff->days . ' Tag' . ($diff->days > 1 ? 'en' : '');
+                            $time_ago = sprintf($this->plugin->txt('time_days_ago'), $diff->days);
                         } elseif ($diff->h > 0) {
-                            $time_ago = 'vor ' . $diff->h . ' Stunde' . ($diff->h > 1 ? 'n' : '');
+                            $time_ago = sprintf($this->plugin->txt('time_hours_ago'), $diff->h);
                         } else {
-                            $time_ago = 'vor ' . $diff->i . ' Minute' . ($diff->i > 1 ? 'n' : '');
+                            $time_ago = sprintf($this->plugin->txt('time_minutes_ago'), $diff->i);
                         }
                         $filename_info[] = $time_ago;
                     }
@@ -803,7 +878,7 @@ class ilIssueAnalysisGUI
                     // Add unique messages if available
                     if (!empty($file_data['unique_messages'])) {
                         $file_content .= '<div style="font-size: 0.9em; color: #555;">';
-                        $file_content .= '<strong>Fehlermeldungen:</strong>';
+                        $file_content .= '<strong>' . $this->plugin->txt('stats_error_messages') . ':</strong>';
                         foreach ($file_data['unique_messages'] as $message) {
                             $file_content .= '<div style="margin: 4px 0 4px 16px; padding: 4px 8px; background: #fff; border-radius: 3px; border-left: 2px solid #dc3545;">';
                             $file_content .= '• ' . htmlspecialchars($message);
@@ -987,10 +1062,17 @@ class ilIssueAnalysisGUI
 
         $output = fopen('php://output', 'w');
 
-        // CSV headers
+        // CSV headers (translated)
         $headers = [
-            'ID', 'Timestamp', 'Severity', 'Message', 'File', 'Line',
-            'User ID', 'Context', 'Analyzed'
+            'ID',
+            $this->plugin->txt('col_timestamp'),
+            $this->plugin->txt('col_severity'),
+            $this->plugin->txt('col_message'),
+            $this->plugin->txt('col_file'),
+            $this->plugin->txt('col_line'),
+            $this->plugin->txt('col_user'),
+            $this->plugin->txt('detail_context_label'),
+            $this->plugin->txt('col_analyzed')
         ];
         fputcsv($output, $headers);
 
@@ -1005,7 +1087,7 @@ class ilIssueAnalysisGUI
                 $entry['line'] ?: '',
                 $entry['user_id'] ?: '',
                 $entry['context'] ?: '',
-                $entry['analyzed'] ? 'Yes' : 'No'
+                $entry['analyzed'] ? $this->lng->txt('yes') : $this->lng->txt('no')
             ];
             fputcsv($output, $row);
         }

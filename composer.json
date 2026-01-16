@@ -1,0 +1,40 @@
+{
+  "name": "uzk/xial",
+  "description": "Issue Analysis Plugin for ILIAS - Error log monitoring and analysis",
+  "type": "project",
+  "keywords": [
+    "ilias",
+    "plugin",
+    "issue analysis",
+    "error monitoring",
+    "error log"
+  ],
+  "minimum-stability": "stable",
+  "license": "proprietary",
+  "authors": [
+    {
+      "name": "Universitaet zu Koeln - CompetenceCenter E-Learning",
+      "email": "nadimo.staszak@uni-koeln.de",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "email": "nadimo.staszak@uni-koeln.de"
+  },
+  "require": {
+    "php": ">=8.1",
+    "ext-json": "*",
+    "ext-mbstring": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "ILIAS\\Plugin\\xial\\": "src/"
+    },
+    "classmap": ["./classes"]
+  },
+  "config": {
+    "classmap-authoritative": true,
+    "optimize-autoloader": true,
+    "sort-packages": true
+  }
+}

@@ -14,6 +14,7 @@ tab_view_details#:#View Details
 
 // Table Headers
 col_timestamp#:#Timestamp
+col_status#:#Status
 col_severity#:#Severity
 col_message#:#Error Message
 col_file#:#File
@@ -21,6 +22,8 @@ col_line#:#Line
 col_user#:#User
 col_analyzed#:#Analyzed
 col_actions#:#Actions
+status_visible#:#Visible
+status_hidden#:#Hidden
 
 // Severity Levels
 severity_error#:#Error
@@ -38,6 +41,8 @@ btn_view_details#:#View Details
 btn_save_settings#:#Save Settings
 btn_reset_settings#:#Reset
 btn_clear_all_data#:#Clear All Data
+btn_ignore_error_type#:#Hide Error Type
+btn_unignore_error_type#:#Show Error Type
 
 // Filters
 filter_severity#:#Severity
@@ -48,6 +53,9 @@ filter_analyzed_all#:#All
 filter_analyzed_yes#:#Analyzed
 filter_analyzed_no#:#Not Analyzed
 filter_user#:#User
+filter_show_ignored#:#Hidden Errors
+filter_show_ignored_yes#:#Show
+filter_show_ignored_no#:#Hide (Default)
 
 // Settings
 settings_retention_days#:#Retention Period (Days)
@@ -82,6 +90,10 @@ msg_clear_tracking_failed#:#Failed to clear source tracking
 msg_clear_data_failed#:#Failed to clear all data
 msg_entry_not_found#:#Error entry not found
 msg_no_id_provided#:#No entry ID provided
+msg_error_type_ignored#:#Error type successfully hidden - all errors with same stacktrace will no longer be displayed
+msg_error_type_ignore_failed#:#Failed to hide error type
+msg_error_type_unignored#:#Error type successfully shown - all errors with this stacktrace will be displayed again
+msg_error_type_unignore_failed#:#Failed to show error type
 
 // Error Messages
 error_no_error_log_dir#:#Error log directory not configured
@@ -104,6 +116,9 @@ detail_timestamp#:#Timestamp
 detail_severity#:#Severity
 detail_context_label#:#Context
 detail_file#:#File
+detail_original_file#:#Original File
+detail_file_available#:#Available (Lazy-Loading active)
+detail_file_not_available#:#No longer available (DB data only)
 detail_full_error_content#:#Full Error Content
 detail_characters#:#characters
 detail_copy_original#:#Copy Original
@@ -150,6 +165,7 @@ stats_top_error_files_chart#:#Top Error Files Chart
 stats_top_error_files_list#:#Error File Details
 stats_file_name#:#File Name
 stats_no_data#:#No data available
+stats_error_messages#:#Error Messages
 stats_time_range_title#:#Error Activity Over Time
 stats_severity_title#:#Severity Distribution
 stats_files_title#:#Top Error Files
@@ -173,3 +189,23 @@ validation_retention_days#:#Retention days must be between 1 and 365
 validation_max_records#:#Max records must be between 100 and 100000
 validation_time_limit#:#Time limit must be between 30 and 600 seconds
 validation_line_limit#:#Line limit must be between 100 and 10000
+
+// Cron Job
+cron_job_title#:#IssueAnalysis Log Import
+cron_job_description#:#Imports error log entries from ILIAS error log files into the IssueAnalysis plugin database
+cron_status_time_limit#:#Time limit
+cron_status_seconds#:#seconds
+cron_status_line_limit#:#Line limit
+cron_status_lines#:#lines
+cron_status_error_log_dir#:#Error log directory
+cron_status_not_configured#:#Not configured
+cron_status_last_run#:#Last run
+cron_status_never#:#Never
+cron_activation_description#:#This cron job imports error log entries from the configured ILIAS error log directory. It can be enabled/disabled through the ILIAS cron job administration. When active, it runs periodically to import new error entries into the plugin database for analysis.
+cron_manual_start_description#:#Manually start the error log import process. This will import new error entries from the configured log directory according to the plugin settings (time limits, line limits, etc.).
+
+// Additional Messages
+msg_invalid_form_data#:#Invalid form data
+msg_invalid_token#:#Invalid or expired security token. Please try again.
+msg_import_running#:#Import is already running. Please wait a moment.
+msg_operation_running#:#Operation is already running. Please wait a moment.

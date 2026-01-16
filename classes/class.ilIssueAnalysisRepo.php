@@ -1,10 +1,14 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
+use ILIAS\Plugin\xial\Service\StringTruncator;
+
 /**
  * Repository class for IssueAnalysis plugin data access
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisRepo
 {
@@ -17,25 +21,80 @@ class ilIssueAnalysisRepo
     }
 
     /**
+     * Insert or update error type in xial_error table
+     */
+    public function insertOrUpdateErrorType(
+        string $stacktraceHash,
+        string $message,
+        ?string $file,
+        ?int $line,
+        string $severity,
+        string $timestamp
+    ): void {
+        // Check if error type already exists
+        $result = $this->db->queryF(
+            "SELECT stacktrace_hash, occurrence_count FROM xial_error WHERE stacktrace_hash = %s",
+            ['text'],
+            [$stacktraceHash]
+        );
+
+        if ($this->db->numRows($result) > 0) {
+            // UPDATE: increment occurrence_count, update last_seen
+            $row = $this->db->fetchAssoc($result);
+            $newCount = ((int) $row['occurrence_count']) + 1;
+
+            $this->db->update('xial_error', [
+                'occurrence_count' => ['integer', $newCount],
+                'last_seen' => ['timestamp', $timestamp]
+            ], [
+                'stacktrace_hash' => ['text', $stacktraceHash]
+            ]);
+        } else {
+            // INSERT: new error type
+            $this->db->insert('xial_error', [
+                'stacktrace_hash' => ['text', $stacktraceHash],
+                'message' => ['clob', $message],
+                'file' => ['text', StringTruncator::truncateFilePath($file, 500)],
+                'line' => ['integer', $line],
+                'severity' => ['text', $severity],
+                'first_seen' => ['timestamp', $timestamp],
+                'last_seen' => ['timestamp', $timestamp],
+                'occurrence_count' => ['integer', 1],
+                'ignored' => ['integer', 0]
+            ]);
+        }
+    }
+
+    /**
      * Insert error log entry
      */
     public function insertLogEntry(array $data): int
     {
         $id = $this->db->nextId('xial_log');
 
+        // Truncate fields to safe lengths to prevent SQL errors
+        // Full stacktrace is in xial_error.message and original file (lazy-loading)
+        $truncated = StringTruncator::truncateFields($data, [
+            'message' => 2000,
+            'file' => 500,
+            'context' => 1000,
+            'code' => 50
+        ]);
+
         $this->db->insert('xial_log', [
             'id' => ['integer', $id],
             'timestamp' => ['timestamp', $data['timestamp']],
             'severity' => ['text', $data['severity']],
-            'message' => ['text', $data['message']],
-            'file' => ['text', $data['file'] ?? null],
+            'message' => ['text', $truncated['message'] ?? ''],
+            'file' => ['text', $truncated['file'] ?? null],
             'line' => ['integer', $data['line'] ?? null],
-            'code' => ['text', $data['code'] ?? null],
+            'code' => ['text', $truncated['code'] ?? null],
+            'stacktrace_hash' => ['text', $data['stacktrace_hash'] ?? null],
             'user_id' => ['integer', $data['user_id'] ?? null],
             'session_id' => ['text', $data['session_id'] ?? null],
             'ip_address' => ['text', $data['ip_address'] ?? null],
             'user_agent_hash' => ['text', $data['user_agent_hash'] ?? null],
-            'context' => ['text', $data['context'] ?? null],
+            'context' => ['text', $truncated['context'] ?? null],
             'analyzed' => ['integer', 0],
             'created_at' => ['timestamp', date('Y-m-d H:i:s')]
         ]);
@@ -44,29 +103,22 @@ class ilIssueAnalysisRepo
     }
 
     /**
-     * Insert detailed error information
-     */
-    public function insertLogDetail(int $logId, ?string $stacktrace = null, ?string $requestData = null): void
-    {
-        $this->db->insert('xial_detail', [
-            'log_id' => ['integer', $logId],
-            'stacktrace' => ['clob', $stacktrace],
-            'request_data' => ['clob', $requestData]
-        ]);
-    }
-
-    /**
      * Get log entries with optional filtering and sorting
      */
-    public function getLogEntries(array $filter = [], int $offset = 0, int $limit = 50, array $order = []): array
+    public function getLogEntries(array $filter = [], int $offset = 0, int $limit = 50, array $order = [], bool $showIgnored = false): array
     {
-        $sql = "SELECT l.*, d.stacktrace, d.request_data
+        $sql = "SELECT l.*, e.ignored as error_ignored
                 FROM xial_log l
-                LEFT JOIN xial_detail d ON l.id = d.log_id
+                LEFT JOIN xial_error e ON l.stacktrace_hash = e.stacktrace_hash
                 WHERE 1=1";
 
         $params = [];
         $types = [];
+
+        // Filter ignored errors (unless showIgnored is true)
+        if (!$showIgnored) {
+            $sql .= " AND (e.ignored IS NULL OR e.ignored = 0)";
+        }
 
         // Apply filters
         if (!empty($filter['severity'])) {
@@ -155,13 +207,14 @@ class ilIssueAnalysisRepo
 
     /**
      * Get single log entry by ID
+     * Note: Stacktrace is loaded via lazy-loading from original file (see getLogEntryWithFullContent)
      */
     public function getLogEntry(int $id): ?array
     {
         $result = $this->db->queryF(
-            "SELECT l.*, d.stacktrace, d.request_data
+            "SELECT l.*, e.ignored as error_ignored
              FROM xial_log l
-             LEFT JOIN xial_detail d ON l.id = d.log_id
+             LEFT JOIN xial_error e ON l.stacktrace_hash = e.stacktrace_hash
              WHERE l.id = %s",
             ['integer'],
             [$id]
@@ -174,9 +227,16 @@ class ilIssueAnalysisRepo
     /**
      * Count total log entries with optional filtering
      */
-    public function countLogEntries(array $filter = []): int
+    public function countLogEntries(array $filter = [], bool $showIgnored = false): int
     {
-        $sql = "SELECT COUNT(*) as cnt FROM xial_log l WHERE 1=1";
+        $sql = "SELECT COUNT(*) as cnt FROM xial_log l
+                LEFT JOIN xial_error e ON l.stacktrace_hash = e.stacktrace_hash
+                WHERE 1=1";
+
+        // Filter ignored errors (unless showIgnored is true)
+        if (!$showIgnored) {
+            $sql .= " AND (e.ignored IS NULL OR e.ignored = 0)";
+        }
 
         $params = [];
         $types = [];
@@ -306,7 +366,7 @@ class ilIssueAnalysisRepo
     }
 
     /**
-     * Delete specific log entries and their details
+     * Delete specific log entries
      */
     public function deleteLogEntries(array $ids): void
     {
@@ -317,18 +377,25 @@ class ilIssueAnalysisRepo
         $placeholders = str_repeat('%s,', count($ids));
         $placeholders = rtrim($placeholders, ',');
 
-        // Delete details first (foreign key constraint)
-        $this->db->queryF(
-            "DELETE FROM xial_detail WHERE log_id IN ($placeholders)",
-            array_fill(0, count($ids), 'integer'),
-            $ids
-        );
-
-        // Delete main entries
+        // Delete log entries
         $this->db->queryF(
             "DELETE FROM xial_log WHERE id IN ($placeholders)",
             array_fill(0, count($ids), 'integer'),
             $ids
+        );
+
+        // Clean up orphaned error types (xial_error entries with no remaining log entries)
+        $this->cleanupOrphanedErrorTypes();
+    }
+
+    /**
+     * Delete error types that have no remaining log entries
+     */
+    private function cleanupOrphanedErrorTypes(): void
+    {
+        // Delete xial_error entries where no xial_log entries reference the hash
+        $this->db->query(
+            "DELETE FROM xial_error WHERE stacktrace_hash NOT IN (SELECT DISTINCT stacktrace_hash FROM xial_log WHERE stacktrace_hash IS NOT NULL)"
         );
     }
 
@@ -830,21 +897,24 @@ class ilIssueAnalysisRepo
     }
 
     /**
-     * Clear all imported data
+     * Clear all imported data (including error types)
      */
     public function clearAllData(): void
     {
-        $this->db->query("DELETE FROM xial_detail");
         $this->db->query("DELETE FROM xial_log");
         $this->db->query("DELETE FROM xial_source");
+        $this->db->query("DELETE FROM xial_error");
     }
 
     /**
      * Export log entries to array for CSV/JSON export
+     * Note: Stacktrace available via lazy-loading from xial_error.message or original file
      */
     public function exportLogEntries(array $ids = []): array
     {
-        $sql = "SELECT l.*, d.stacktrace, d.request_data FROM xial_log l LEFT JOIN xial_detail d ON l.id = d.log_id";
+        $sql = "SELECT l.*, e.message as stacktrace, e.ignored as error_ignored
+                FROM xial_log l
+                LEFT JOIN xial_error e ON l.stacktrace_hash = e.stacktrace_hash";
         $params = [];
         $types = [];
 
@@ -866,5 +936,119 @@ class ilIssueAnalysisRepo
         }
 
         return $entries;
+    }
+
+    /**
+     * Ignore/hide all errors of a specific type (by stacktrace hash)
+     */
+    public function ignoreHash(string $stacktraceHash, int $userId, ?string $note = null): void
+    {
+        $this->db->update('xial_error', [
+            'ignored' => ['integer', 1],
+            'ignored_at' => ['timestamp', date('Y-m-d H:i:s')],
+            'ignored_by' => ['integer', $userId],
+            'note' => ['text', $note]
+        ], [
+            'stacktrace_hash' => ['text', $stacktraceHash]
+        ]);
+    }
+
+    /**
+     * Un-ignore/show errors of a specific type again
+     */
+    public function unignoreHash(string $stacktraceHash): void
+    {
+        $this->db->update('xial_error', [
+            'ignored' => ['integer', 0],
+            'ignored_at' => ['timestamp', null],
+            'ignored_by' => ['integer', null],
+            'note' => ['text', null]
+        ], [
+            'stacktrace_hash' => ['text', $stacktraceHash]
+        ]);
+    }
+
+    /**
+     * Get all ignored error types
+     */
+    public function getIgnoredHashes(): array
+    {
+        $result = $this->db->query(
+            "SELECT e.*, COUNT(l.id) as affected_count
+             FROM xial_error e
+             LEFT JOIN xial_log l ON e.stacktrace_hash = l.stacktrace_hash
+             WHERE e.ignored = 1
+             GROUP BY e.stacktrace_hash
+             ORDER BY e.ignored_at DESC"
+        );
+
+        $hashes = [];
+        while ($row = $this->db->fetchAssoc($result)) {
+            $hashes[] = $row;
+        }
+
+        return $hashes;
+    }
+
+    /**
+     * Get stacktrace hash for a specific error code
+     */
+    public function getHashForErrorCode(string $errorCode): ?string
+    {
+        $result = $this->db->queryF(
+            "SELECT stacktrace_hash FROM xial_log WHERE code = %s LIMIT 1",
+            ['text'],
+            [$errorCode]
+        );
+
+        $row = $this->db->fetchAssoc($result);
+        return $row ? $row['stacktrace_hash'] : null;
+    }
+
+    /**
+     * Get full error content from original file (lazy-loading)
+     */
+    public function getLogEntryWithFullContent(int $id, string $errorLogDir): array
+    {
+        // Get basic entry from DB
+        $entry = $this->getLogEntry($id);
+        if (!$entry) {
+            return [];
+        }
+
+        // Try to load full content from original file
+        $errorCode = $entry['code'];
+        if ($errorCode) {
+            $filePath = rtrim($errorLogDir, '/') . '/' . $errorCode . '.log';
+
+            if (file_exists($filePath) && is_readable($filePath)) {
+                $fullContent = file_get_contents($filePath);
+                if ($fullContent !== false) {
+                    // SUCCESS: Full content from original file (with Request-Data)
+                    $entry['full_stacktrace'] = $fullContent;
+                    $entry['file_available'] = true;
+                } else {
+                    $entry['file_available'] = false;
+                }
+            } else {
+                $entry['file_available'] = false;
+            }
+        }
+
+        // FALLBACK: If original file not available, load stacktrace from xial_error
+        if (empty($entry['full_stacktrace']) && !empty($entry['stacktrace_hash'])) {
+            $result = $this->db->queryF(
+                "SELECT message FROM xial_error WHERE stacktrace_hash = %s",
+                ['text'],
+                [$entry['stacktrace_hash']]
+            );
+
+            if ($row = $this->db->fetchAssoc($result)) {
+                // Use stacktrace from xial_error as fallback (without Request-Data, but better than nothing)
+                $entry['stacktrace'] = $row['message'];
+            }
+        }
+
+        return $entry;
     }
 }

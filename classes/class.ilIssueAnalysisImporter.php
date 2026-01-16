@@ -1,11 +1,13 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Log importer for IssueAnalysis plugin
  * Handles importing error log entries from ILIAS error log files
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisImporter
 {
@@ -19,6 +21,8 @@ class ilIssueAnalysisImporter
     private int $errorCount = 0;
     private array $errors = [];
     private bool $debugMode = false;
+    private bool $lineLimitReached = false;
+    private bool $timeLimitReached = false;
 
     public function __construct()
     {
@@ -31,7 +35,19 @@ class ilIssueAnalysisImporter
         $this->repo = new ilIssueAnalysisRepo();
         $this->settings = new ilIssueAnalysisSettings();
         $this->sanitizer = new ilIssueAnalysisSanitizer($this->settings->getMaskSensitive());
-        $this->logger = $DIC->logger()->comp('xial');
+        $this->logger = $DIC->logger()->xial();
+    }
+
+    /**
+     * Calculate SHA-256 hash of stacktrace for deduplication
+     */
+    private function calculateStacktraceHash(string $stacktrace): string
+    {
+        // Normalize stacktrace: trim whitespace
+        $normalized = trim($stacktrace);
+
+        // Calculate SHA-256 hash
+        return hash('sha256', $normalized);
     }
 
     /**
@@ -43,56 +59,42 @@ class ilIssueAnalysisImporter
         $this->skippedCount = 0;
         $this->errorCount = 0;
         $this->errors = [];
-
-        $this->errors[] = "Debug: Starting import process";
+        $this->lineLimitReached = false;
+        $this->timeLimitReached = false;
 
         $startTime = time();
 
         try {
-            $this->errors[] = "Debug: Getting time limit from settings";
             $timeLimit = $this->settings->getImportTimeLimit();
-            $this->errors[] = "Debug: Time limit retrieved: {$timeLimit}";
 
-            $this->errors[] = "Debug: About to get line limit from settings";
-            // Use the method but with proper error handling
             try {
                 $lineLimit = $this->settings->getImportLineLimit();
-                $this->errors[] = "Debug: Line limit retrieved via method: {$lineLimit}";
             } catch (Exception $e2) {
-                $this->errors[] = "Debug: Method failed, using your configured value: " . $e2->getMessage();
-                $lineLimit = 100; // Your configured value as fallback
+                $lineLimit = 100; // Fallback
             }
-
-            // Debug: Log the actual limits
-            $this->errors[] = "Debug: Import limits - Time: {$timeLimit}s, Lines: {$lineLimit}";
-            $this->errors[] = "Debug: About to get error log directory";
         } catch (Exception $e) {
-            $this->errors[] = "Debug: ERROR getting limits: " . $e->getMessage();
             // Use defaults if settings fail
             $timeLimit = 120;
             $lineLimit = 100;
-            $this->errors[] = "Debug: Using default limits - Time: {$timeLimit}s, Lines: {$lineLimit}";
         }
 
         $errorLogDir = $this->settings->getErrorLogDirectory();
         if (empty($errorLogDir) || !is_dir($errorLogDir)) {
-            $this->errors[] = 'Error log directory not configured or not accessible: ' . $errorLogDir;
+            $this->logger->error('Error log directory not configured or not accessible: ' . $errorLogDir);
+            $this->errorCount++;
             return $this->getImportResult();
         }
 
-        $this->log('Using error log directory: ' . $errorLogDir);
-
         $logFiles = $this->getLogFiles($errorLogDir);
-        $this->errors[] = "Debug: Found " . count($logFiles) . " log files: " . implode(', ', $logFiles);
 
         foreach ($logFiles as $logFile) {
             if ((time() - $startTime) > $timeLimit) {
-                $this->errors[] = 'Import stopped: time limit reached';
+                $this->timeLimitReached = true;
                 break;
             }
 
             if ($this->importedCount >= $lineLimit) {
-                $this->errors[] = 'Import stopped: line limit reached';
+                $this->lineLimitReached = true;
                 break;
             }
 
@@ -170,92 +172,90 @@ class ilIssueAnalysisImporter
     {
         try {
             if (!is_readable($filePath)) {
-                $this->errors[] = "Cannot read error file: $filePath";
                 return true; // Continue with next file
             }
 
             $fileInfo = $this->getFileInfo($filePath);
             $tracking = $this->repo->getSourceTracking($filePath);
 
-            // For ILIAS error files: if we've already processed this file completely, skip it
+            // Extract error code from filename early (for duplicate check)
+            $errorCode = basename($filePath);
+            $errorCode = preg_replace('/\.log$/i', '', $errorCode);
+
+            // FIRST CHECK: File-Tracking - has this physical file been processed?
             if ($tracking && $tracking['file_inode'] === $fileInfo['inode'] && $tracking['last_offset'] >= $fileInfo['size']) {
                 $this->skippedCount++;
                 return true; // Continue with next file
             }
 
-            // Read the entire ILIAS error file (they're usually small)
-            $content = file_get_contents($filePath);
-            if ($content === false) {
-                $this->errors[] = "Cannot read error file content: $filePath";
+            // SECOND CHECK: Error-Code - is this error already in the database?
+            // (Prevents duplicates if file-tracking was reset but DB still has the entry)
+            if ($this->repo->errorCodeExists($errorCode)) {
+                $this->skippedCount++;
+                // Still mark file as processed to avoid checking it again next time
+                $this->repo->updateSourceTracking($filePath, $fileInfo['inode'], $fileInfo['size']);
                 return true; // Continue with next file
             }
 
-            // Extract error code from filename (remove .log extension)
-            $errorCode = basename($filePath);
-            $errorCode = preg_replace('/\.log$/i', '', $errorCode);
+            // Read ILIAS error file (chunked for large files)
+            // Only read first 100 KB - Stacktrace is at the beginning, rest is just Request-Data
+            $maxReadSize = 100 * 1024; // 100 KB should be enough for message + stacktrace
+
+            if ($fileInfo['size'] > $maxReadSize) {
+                // Large file: read only first chunk
+                $content = @file_get_contents($filePath, false, null, 0, $maxReadSize);
+            } else {
+                // Small file: read completely
+                $content = @file_get_contents($filePath);
+            }
+
+            if ($content === false) {
+                return true; // Continue with next file
+            }
 
             // Parse ILIAS error file content
             $logEntry = $this->parseIliasErrorFile($content, $errorCode, $filePath);
-            $this->errors[] = "Debug: Parsed entry for $errorCode: " . ($logEntry ? 'SUCCESS' : 'FAILED');
 
             if ($logEntry) {
                 try {
-                    // Check if this error was already imported (by error code)
-                    $exists = $this->repo->errorCodeExists($errorCode);
-                    $this->errors[] = "Debug: Error code $errorCode exists in DB: " . ($exists ? 'YES' : 'NO');
+                    // Import the entry (duplicate checks already done above)
+                    // 1. Insert or update error type in xial_error
+                    $stacktraceHash = $logEntry['stacktrace_hash'];
+                    $this->repo->insertOrUpdateErrorType(
+                        $stacktraceHash,
+                        $logEntry['stacktrace_only'],
+                        $logEntry['file'],
+                        $logEntry['line'],
+                        $logEntry['severity'],
+                        $logEntry['timestamp']
+                    );
 
-                    if (!$exists) {
-                        $logId = $this->repo->insertLogEntry($logEntry);
-                        $this->errors[] = "Debug: Inserted log entry with ID: $logId";
+                    // 2. Insert log entry in xial_log (with stacktrace_hash)
+                    $this->repo->insertLogEntry($logEntry);
 
-                        // Insert detailed data if available
-                        if (!empty($logEntry['stacktrace']) || !empty($logEntry['request_data'])) {
-                            $stacktrace_len = strlen($logEntry['stacktrace'] ?? '');
-                            $request_len = strlen($logEntry['request_data'] ?? '');
+                    $this->importedCount++;
 
-                            $this->repo->insertLogDetail(
-                                $logId,
-                                $logEntry['stacktrace'],
-                                $logEntry['request_data']
-                            );
-                            $this->errors[] = "Debug: Inserted detail data for log ID: $logId (stacktrace: $stacktrace_len chars, request: $request_len chars)";
-                        } else {
-                            $this->errors[] = "Debug: NO detail data inserted for log ID: $logId - stacktrace empty: " . (empty($logEntry['stacktrace']) ? 'YES' : 'NO');
-                        }
-
-                        $this->importedCount++;
-                        $this->errors[] = "Debug: Import count now: " . $this->importedCount;
-
-                        // Check if line limit reached after importing
-                        if ($this->importedCount >= $lineLimit) {
-                            $this->errors[] = "Import stopped: line limit reached ({$this->importedCount} >= {$lineLimit})";
-                            return false; // Stop processing - limit reached
-                        }
-                    } else {
-                        $this->skippedCount++;
-                        $this->errors[] = "Debug: Skipped $errorCode (already exists)";
+                    // Check if line limit reached after importing
+                    if ($this->importedCount >= $lineLimit) {
+                        $this->lineLimitReached = true;
+                        return false; // Stop processing - limit reached
                     }
                 } catch (Exception $e) {
                     $this->errorCount++;
-                    $this->errors[] = "Debug: Exception during import: " . $e->getMessage();
                     $this->logger->error('Failed to import error file: ' . $e->getMessage());
                 }
-            } else {
-                $this->errors[] = "Debug: Could not parse log entry for $errorCode";
             }
 
-            // Only mark file as completely processed if no retention filter is active
-            // If retention is active, don't update tracking to allow re-processing with different retention settings
-            $retentionDays = $this->settings->getRetentionDays();
-            if ($retentionDays === 0) {
-                // No retention filter - safe to mark as completely processed
-                $this->repo->updateSourceTracking($filePath, $fileInfo['inode'], $fileInfo['size']);
-            }
-            // If retention is active, we don't update tracking to allow re-import with different retention settings
+            // ALWAYS mark file as completely processed after parsing attempt
+            // Rationale: Each error file should only be read once, regardless of retention/rolling window settings
+            // - If retention filter rejected it now, it will always be rejected (timestamp doesn't change)
+            // - If rolling window deletes entries later, that's intentional cleanup (not a reason to re-import)
+            // - This prevents repeatedly parsing old files that will never pass retention filter
+            $this->repo->updateSourceTracking($filePath, $fileInfo['inode'], $fileInfo['size']);
 
         } catch (Exception $e) {
-            $this->errors[] = "Error processing file $filePath: " . $e->getMessage();
-            $this->logger->error('Import error: ' . $e->getMessage());
+            $this->errorCount++;
+            $this->logger->error('Error processing file ' . $filePath . ': ' . $e->getMessage());
         }
 
         return true; // Continue processing
@@ -266,12 +266,7 @@ class ilIssueAnalysisImporter
      */
     private function parseIliasErrorFile(string $content, string $errorCode, string $filePath): ?array
     {
-        // Debug the file content
-        $this->errors[] = "Debug: File content length for $errorCode: " . strlen($content);
-        $this->errors[] = "Debug: First 200 chars of content: " . mb_substr($content, 0, 200);
-
         if (empty($content)) {
-            $this->errors[] = "Debug: Content is empty for $errorCode";
             return null;
         }
 
@@ -300,6 +295,19 @@ class ilIssueAnalysisImporter
         // Always store the full content as stacktrace
         $fullContent = trim($content);
 
+        // Extract ONLY the stacktrace part (before Request-Data section)
+        // This is what we'll use for hashing - more precise deduplication
+        $stacktraceOnly = $fullContent;
+        $requestDataMarkers = ['-- GET Data --', '-- POST Data --', '-- Files --', '-- Cookies --'];
+        foreach ($requestDataMarkers as $marker) {
+            $pos = strpos($fullContent, $marker);
+            if ($pos !== false) {
+                $stacktraceOnly = substr($fullContent, 0, $pos);
+                break;
+            }
+        }
+        $stacktraceOnly = trim($stacktraceOnly);
+
         // Extract file path and line number from stacktrace
         $file = null;
         $lineNumber = null;
@@ -314,19 +322,23 @@ class ilIssueAnalysisImporter
             $lineNumber = (int) $matches[2];
         }
 
+        // Calculate stacktrace hash ONLY from stacktrace (not Request-Data)
+        // This gives us better deduplication - errors with same stacktrace but different request data = same hash
+        $stacktraceHash = $this->calculateStacktraceHash($stacktraceOnly);
+
         $result = [
             'timestamp' => $timestamp,
             'severity' => 'error', // ILIAS error files are always errors
-            'message' => $message,
+            'message' => $message, // Short first-line message for xial_log
+            'stacktrace_only' => $stacktraceOnly, // Stacktrace without Request-Data for xial_error (searchable)
             'file' => $file, // Now extracted from content
             'line' => $lineNumber,
             'code' => $errorCode, // Store the error code
             'context' => 'ilias_error',
-            'stacktrace' => $fullContent, // Store the entire file content here
-            'request_data' => null // Add missing request_data field
+            'stacktrace' => $fullContent, // Full content (not stored in DB, only for lazy-loading)
+            'stacktrace_hash' => $stacktraceHash, // Hash for deduplication
+            'request_data' => null
         ];
-
-        $this->errors[] = "Debug: Parsed result - message length: " . strlen($result['message']) . ", stacktrace length: " . strlen($result['stacktrace']) . ", file: " . ($file ?: 'NOT_FOUND') . ", line: " . ($lineNumber ?: 'NOT_FOUND');
 
         // Check retention period - skip entries that are too old
         $retentionDays = $this->settings->getRetentionDays();
@@ -336,7 +348,6 @@ class ilIssueAnalysisImporter
 
             if ($entryTimestamp !== false && $entryTimestamp < $cutoffTimestamp) {
                 // Entry is older than retention period, skip it
-                $this->errors[] = "Debug: Skipping entry older than retention period ($retentionDays days)";
                 return null;
             }
         }
@@ -578,7 +589,6 @@ class ilIssueAnalysisImporter
                     $this->logger->info("Cleaned up $deletedCount old log entries");
                 }
             } catch (Exception $e) {
-                $this->errors[] = 'Cleanup failed: ' . $e->getMessage();
                 $this->logger->error('Cleanup error: ' . $e->getMessage());
             }
         }
@@ -589,10 +599,6 @@ class ilIssueAnalysisImporter
      */
     private function getImportResult(): array
     {
-        // Check if limits were reached
-        $lineLimitReached = in_array('Import stopped: line limit reached', $this->errors);
-        $timeLimitReached = in_array('Import stopped: time limit reached', $this->errors);
-
         return [
             'success' => $this->errorCount === 0,
             'imported' => $this->importedCount,
@@ -600,8 +606,8 @@ class ilIssueAnalysisImporter
             'errors' => $this->errorCount,
             'error_messages' => $this->errors,
             'total_processed' => $this->importedCount + $this->skippedCount,
-            'line_limit_reached' => $lineLimitReached,
-            'time_limit_reached' => $timeLimitReached
+            'line_limit_reached' => $this->lineLimitReached,
+            'time_limit_reached' => $this->timeLimitReached
         ];
     }
 

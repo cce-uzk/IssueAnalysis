@@ -1,5 +1,8 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Data sanitizer for secure sharing of error logs
  *
@@ -8,7 +11,6 @@
  * to enable safe sharing of error logs in public forums or issue trackers.
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisSanitizer
 {

@@ -1,11 +1,13 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Administration GUI for IssueAnalysis plugin
  * Integrates the plugin into ILIAS administration menu under System
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  *
  * @ilCtrl_isCalledBy ilIssueAnalysisAdminGUI: ilAdministrationGUI
  * @ilCtrl_Calls ilIssueAnalysisAdminGUI: ilIssueAnalysisGUI

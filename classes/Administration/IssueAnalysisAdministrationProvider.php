@@ -12,7 +12,6 @@ use ilIssueAnalysisPlugin;
  * Adds menu entries to ILIAS administration
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class IssueAnalysisAdministrationProvider extends AbstractStaticMainMenuPluginProvider
 {

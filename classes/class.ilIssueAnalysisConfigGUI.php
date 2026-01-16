@@ -1,11 +1,13 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Configuration GUI class for IssueAnalysis plugin
  * Provides the administration interface accessible via plugin configuration
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  *
  * @ilCtrl_IsCalledBy ilIssueAnalysisConfigGUI: ilObjComponentSettingsGUI
  */
@@ -77,7 +79,7 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
         // Create cron job information as simple HTML before form
         $cron_info_text = sprintf(
             $this->plugin->txt('settings_cron_info_text'),
-            'IssueAnalysis Log Import',
+            $this->plugin->txt('cron_job_title'),
             'xial_import'
         );
 
@@ -176,7 +178,7 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
 
             $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_settings_saved'));
         } else {
-            $this->tpl->setOnScreenMessage('failure', 'Invalid form data');
+            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_invalid_form_data'));
         }
 
         $this->showSettings();

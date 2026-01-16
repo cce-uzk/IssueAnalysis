@@ -1,10 +1,12 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 /**
  * Settings management for IssueAnalysis plugin
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisSettings
 {
@@ -260,25 +262,26 @@ class ilIssueAnalysisSettings
 
     /**
      * Validate settings
+     * Returns array of language keys for validation errors (use $plugin->txt() to translate)
      */
     public function validateSettings(array $settings): array
     {
         $errors = [];
 
         if (isset($settings['retention_days']) && ($settings['retention_days'] < 1 || $settings['retention_days'] > 365)) {
-            $errors[] = 'Retention days must be between 1 and 365';
+            $errors[] = 'validation_retention_days';
         }
 
         if (isset($settings['max_records']) && ($settings['max_records'] < 100 || $settings['max_records'] > 100000)) {
-            $errors[] = 'Max records must be between 100 and 100000';
+            $errors[] = 'validation_max_records';
         }
 
         if (isset($settings['import_time_limit']) && ($settings['import_time_limit'] < 30 || $settings['import_time_limit'] > 600)) {
-            $errors[] = 'Import time limit must be between 30 and 600 seconds';
+            $errors[] = 'validation_time_limit';
         }
 
         if (isset($settings['import_line_limit']) && ($settings['import_line_limit'] < 100 || $settings['import_line_limit'] > 10000)) {
-            $errors[] = 'Import line limit must be between 100 and 10000';
+            $errors[] = 'validation_line_limit';
         }
 
         return $errors;

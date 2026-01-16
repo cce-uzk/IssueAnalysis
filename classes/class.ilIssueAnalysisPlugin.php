@@ -1,5 +1,8 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/bootstrap.php';
+
 use ILIAS\GlobalScreen\Provider\ProviderCollection;
 
 
@@ -8,7 +11,6 @@ use ILIAS\GlobalScreen\Provider\ProviderCollection;
  * IssueAnalysis Plugin - ILIAS Error Log Analysis for Administrators
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJobProvider
 {
@@ -38,20 +40,12 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
         $this->id = $id;
         parent::__construct($db, $component_repository, $id);
 
-        // Debug log
-        error_log("=== PLUGIN CONSTRUCTOR CALLED ===");
-        error_log("IssueAnalysis Plugin: Constructor called at " . date('Y-m-d H:i:s'));
-
         if (!isset($DIC["global_screen"])) {
-            error_log("IssueAnalysis Plugin: No global_screen available");
             return;
         }
 
-        // Add MainBarProvider to provider collection (exact GuidedTour pattern)
+        // Add MainBarProvider to provider collection
         $this->addPluginProviders();
-
-        // Debug log
-        error_log("IssueAnalysis Plugin: GlobalScreen providers added at " . date('Y-m-d H:i:s'));
     }
 
     /**
@@ -63,9 +57,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
 
         require_once __DIR__ . '/MainBar/ilIssueAnalysisMainBarProvider.php';
         $this->provider_collection->setMainBarProvider(new \xial\mainbar\ilIssueAnalysisMainBarProvider($DIC, $this));
-
-        error_log("=== MAINBAR PROVIDER REGISTERED ===");
-        error_log("IssueAnalysis Plugin: MainBarProvider registered successfully");
     }
 
     /**
@@ -75,11 +66,7 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     {
         global $DIC;
 
-        // Debug log
-        error_log("IssueAnalysis Plugin: getInstance() called");
-
         if (self::$instance instanceof ilIssueAnalysisPlugin) {
-            // error_log("IssueAnalysis Plugin: getInstance() returning existing instance");
             return self::$instance;
         }
 
@@ -95,7 +82,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
             )->getPluginSlotById(self::SLOT_ID)->getPluginByName(self::PLUGIN_NAME);
 
             self::$instance = $component_factory->getPlugin($plugin_info->getId());
-            error_log("IssueAnalysis Plugin: getInstance() created new instance");
             return self::$instance;
         }
 
@@ -150,9 +136,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     protected function init(): void
     {
         parent::init();
-
-        // Debug log
-        error_log("IssueAnalysis Plugin: init() called at " . date('Y-m-d H:i:s'));
     }
 
     /**
@@ -240,15 +223,15 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
         global $DIC;
         $db = $DIC->database();
 
-        if ($db->tableExists('xial_detail')) {
-            $db->dropTable('xial_detail');
-        }
         if ($db->tableExists('xial_log')) {
             $db->dropSequence('xial_log');
             $db->dropTable('xial_log');
         }
         if ($db->tableExists('xial_source')) {
             $db->dropTable('xial_source');
+        }
+        if ($db->tableExists('xial_error')) {
+            $db->dropTable('xial_error');
         }
     }
 
@@ -278,12 +261,14 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
                 $job_id = ilIssueAnalysisImportJob::CRON_JOB_ID;
 
                 if ($cron_manager->isJobActive($job_id)) {
-                    $cron_manager->deactivateJob($job_id);
+                    // Get the actual job instance and current user object
+                    $job = $this->getCronJobInstance($job_id);
+                    $actor = $DIC->user();
+                    $cron_manager->deactivateJob($job, $actor);
                 }
             }
         } catch (Exception $e) {
-            // Log error but don't fail uninstall
-            error_log("IssueAnalysis Plugin: Error cleaning up cron jobs: " . $e->getMessage());
+            // Silent fail - don't fail uninstall due to cron cleanup issues
         }
     }
 }

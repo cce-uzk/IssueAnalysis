@@ -1,5 +1,8 @@
 <?php declare(strict_types=1);
 
+// Load plugin bootstrap (includes Composer autoloader)
+require_once __DIR__ . '/../bootstrap.php';
+
 use ILIAS\Cron\Schedule\CronJobScheduleType;
 
 /**
@@ -7,7 +10,6 @@ use ILIAS\Cron\Schedule\CronJobScheduleType;
  * Handles automated import of error log entries
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.0
  */
 class ilIssueAnalysisImportJob extends ilCronJob
 {
@@ -16,6 +18,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
     private ilIssueAnalysisSettings $settings;
     private ilIssueAnalysisImporter $importer;
     private ilLogger $logger;
+    private ?ilIssueAnalysisPlugin $plugin = null;
 
     public function __construct()
     {
@@ -26,7 +29,19 @@ class ilIssueAnalysisImportJob extends ilCronJob
 
         $this->settings = new ilIssueAnalysisSettings();
         $this->importer = new ilIssueAnalysisImporter();
-        $this->logger = $DIC->logger()->comp('xial');
+        $this->logger = $DIC->logger()->xial();
+        $this->plugin = ilIssueAnalysisPlugin::getInstance();
+    }
+
+    /**
+     * Get translated text from plugin
+     */
+    private function txt(string $key): string
+    {
+        if ($this->plugin !== null) {
+            return $this->plugin->txt($key);
+        }
+        return $key;
     }
 
     /**
@@ -42,7 +57,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
      */
     public function getTitle(): string
     {
-        return 'IssueAnalysis Log Import';
+        return $this->txt('cron_job_title');
     }
 
     /**
@@ -50,7 +65,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
      */
     public function getDescription(): string
     {
-        return 'Imports error log entries from ILIAS error log files into the IssueAnalysis plugin database.';
+        return $this->txt('cron_job_description');
     }
 
     /**
@@ -181,16 +196,16 @@ class ilIssueAnalysisImportJob extends ilCronJob
         $info = [];
 
         // Add plugin settings info
-        $info[] = 'Time limit: ' . $this->settings->getImportTimeLimit() . ' seconds';
-        $info[] = 'Line limit: ' . $this->settings->getImportLineLimit() . ' lines';
-        $info[] = 'Error log directory: ' . ($this->settings->getErrorLogDirectory() ?: 'Not configured');
+        $info[] = $this->txt('cron_status_time_limit') . ': ' . $this->settings->getImportTimeLimit() . ' ' . $this->txt('cron_status_seconds');
+        $info[] = $this->txt('cron_status_line_limit') . ': ' . $this->settings->getImportLineLimit() . ' ' . $this->txt('cron_status_lines');
+        $info[] = $this->txt('cron_status_error_log_dir') . ': ' . ($this->settings->getErrorLogDirectory() ?: $this->txt('cron_status_not_configured'));
 
         // Add last run info
         $last_cron_import = $this->settings->getLastCronImport();
         if ($last_cron_import > 0) {
-            $info[] = 'Last run: ' . date('Y-m-d H:i:s', $last_cron_import);
+            $info[] = $this->txt('cron_status_last_run') . ': ' . date('Y-m-d H:i:s', $last_cron_import);
         } else {
-            $info[] = 'Last run: Never';
+            $info[] = $this->txt('cron_status_last_run') . ': ' . $this->txt('cron_status_never');
         }
 
         return implode("\n", $info);
@@ -220,9 +235,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
      */
     public function getActivationDescription(): string
     {
-        return 'This cron job imports error log entries from the configured ILIAS error log directory. ' .
-               'It can be enabled/disabled through the IssueAnalysis plugin settings. ' .
-               'When active, it runs periodically to import new error entries into the plugin database for analysis.';
+        return $this->txt('cron_activation_description');
     }
 
     /**
@@ -230,7 +243,6 @@ class ilIssueAnalysisImportJob extends ilCronJob
      */
     public function getManualStartDescription(): string
     {
-        return 'Manually start the error log import process. This will import new error entries from the ' .
-               'configured log directory according to the plugin settings (time limits, line limits, etc.).';
+        return $this->txt('cron_manual_start_description');
     }
 }
