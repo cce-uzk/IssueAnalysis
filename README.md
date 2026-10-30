@@ -1,6 +1,6 @@
-# IssueAnalysis for ILIAS 9
+# IssueAnalysis for ILIAS 10
 
-ILIAS 9 UserInterfaceHook plugin (ID `xial`) for analysing the error files that ILIAS writes to its error log directory. Administrators import the error files into the database and get a filterable list, a detail view and statistics under **Administration → Issue Analysis** ("Fehleranalyse").
+ILIAS 10 UserInterfaceHook plugin (ID `xial`) for analysing the error files that ILIAS writes to its error log directory. Administrators import the error files into the database and get a filterable list, a detail view and statistics under **Administration → Issue Analysis** ("Fehleranalyse").
 
 Identical errors are recognised by a hash of their stacktrace, so error types that occur thousands of times can be hidden with one click. The database only holds metadata; stacktrace and request data of a single error are read from the original error file when the detail view is opened.
 
@@ -27,15 +27,15 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
 - Incremental import: files that were already imported are skipped; time and entry limit per run
 - Deduplication of error types by a SHA-256 hash of the stacktrace (without request data)
 - Hiding and showing of error types; a hidden type hides all its occurrences
-- ILIAS 9 data table with sorting, pagination and column selection; filter for severity, error code, full text and hidden errors
+- ILIAS 10 data table with sorting, pagination and column selection; filter for severity, error code, full text and hidden errors
 - Detail view with the complete content of the error file, optionally masked, and "Copy Original" / "Copy Safe for Sharing"
 - Statistics: errors per time range, top error files, recent critical errors
 - Retention period and maximum number of records
 
 ## Requirements
 
-- ILIAS 9.0 – 9.x
-- PHP 8.1 or higher with `json` and `mbstring`
+- ILIAS 10.0 – 10.x
+- PHP 8.2 or higher with `json` and `mbstring`
 - Read access of the web server user (and of the cron user) to the ILIAS error log directory
 
 ## Installation
@@ -43,7 +43,7 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
 1. Copy the plugin to
 
    ```
-   Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis/
+   public/Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis/
    ```
 
    e.g. with `git clone https://github.com/cce-uzk/IssueAnalysis.git IssueAnalysis`.
@@ -146,14 +146,14 @@ IssueAnalysis/
 
 ## Tests and code style
 
-Unit tests (PHPUnit 9.5, as used by ILIAS 9) cover the error file parser and the stacktrace hash, the sanitizer, the settings, the double submission guard and the string truncation. They run without an ILIAS installation:
+Unit tests (PHPUnit 10.5, as used by ILIAS 10) cover the error file parser and the stacktrace hash, the sanitizer, the settings, the double submission guard and the string truncation. They run without an ILIAS installation:
 
 ```bash
-cd Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis
+cd public/Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis
 <path to>/phpunit -c phpunit.xml
 ```
 
-The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
+The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_10/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_10/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
 
 ```bash
 libs/composer/vendor/bin/php-cs-fixer fix --dry-run --diff --config=./CI/PHP-CS-Fixer/code-format.php_cs <plugin directory>
