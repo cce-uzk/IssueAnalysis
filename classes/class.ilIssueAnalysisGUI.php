@@ -680,8 +680,8 @@ class ilIssueAnalysisGUI
         string $share_id,
         string $share_content
     ): array {
-        $this->tpl->addCss($this->plugin->getDirectory() . '/css/xial.css');
-        $this->tpl->addJavaScript($this->plugin->getDirectory() . '/js/xial.js');
+        $this->tpl->addCss($this->plugin->getRelativeDirectory() . '/css/xial.css');
+        $this->tpl->addJavaScript($this->plugin->getRelativeDirectory() . '/js/xial.js');
 
         $template = $this->plugin->getTemplate('default/tpl.xial_error_content.html');
         $template->setVariable('CONTENT_ID', $content_id);

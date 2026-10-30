@@ -27,7 +27,7 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
 {
     private const PLUGIN_ID = "xial";
     private const PLUGIN_NAME = "IssueAnalysis";
-    private const CTYPE = "Services";
+    private const CTYPE = ilComponentInfo::TYPE_COMPONENT;
     private const CNAME = "UIComponent";
     private const SLOT_ID = "uihk";
 

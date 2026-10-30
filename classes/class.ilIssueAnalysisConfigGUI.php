@@ -78,7 +78,7 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
         $this->tpl->setTitle($this->plugin->txt('plugin_title'));
         $this->tpl->setDescription($this->plugin->txt('plugin_description'));
         $this->tpl->setTitleIcon(
-            $this->plugin->getDirectory() . '/templates/images/icon_issueanalysis.svg',
+            $this->plugin->getRelativeDirectory() . '/templates/images/icon_issueanalysis.svg',
             $this->plugin->txt('plugin_title')
         );
 

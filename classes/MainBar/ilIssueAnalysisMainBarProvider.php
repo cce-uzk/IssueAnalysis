@@ -68,7 +68,7 @@ class ilIssueAnalysisMainBarProvider extends AbstractStaticMainMenuPluginProvide
         }
 
         $icon = $DIC->ui()->factory()->symbol()->icon()->custom(
-            $plugin->getDirectory() . '/templates/images/icon_issueanalysis.svg',
+            $plugin->getRelativeDirectory() . '/templates/images/icon_issueanalysis.svg',
             $plugin->txt('plugin_title')
         );
 

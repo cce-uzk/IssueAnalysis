@@ -98,7 +98,7 @@ class ilIssueAnalysisAdminGUI extends ilObjectGUI
             $this->tpl->setTitle($this->plugin->txt('plugin_title'));
             $this->tpl->setDescription($this->plugin->txt('plugin_description'));
             $this->tpl->setTitleIcon(
-                $this->plugin->getDirectory() . '/templates/images/icon_issueanalysis.svg',
+                $this->plugin->getRelativeDirectory() . '/templates/images/icon_issueanalysis.svg',
                 $this->plugin->txt('plugin_title')
             );
 
@@ -146,7 +146,7 @@ class ilIssueAnalysisAdminGUI extends ilObjectGUI
         // Create ILIAS icon object
         $icon = $DIC->ui()->factory()->symbol()->icon()
                    ->custom(
-                       $plugin->getDirectory() . '/templates/images/icon_issueanalysis.svg',
+                       $plugin->getRelativeDirectory() . '/templates/images/icon_issueanalysis.svg',
                        $plugin->txt('plugin_title')
                    );
 
