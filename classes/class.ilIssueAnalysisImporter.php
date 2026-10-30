@@ -153,7 +153,7 @@ class ilIssueAnalysisImporter
             if (preg_match('/^\d+$/', $file) || // Pure numeric error codes
                 preg_match('/^error_\d+/', $file) || // error_123 pattern
                 preg_match('/\.error$/', $file) || // .error files
-                preg_match('/\.log$/', $file)) { // .log files
+                preg_match('/^[A-Za-z0-9,\-]{0,5}_\d+\.log$/', $file)) { // <session prefix>_<random>.log
                 $logFiles[] = $fullPath;
             }
         }
