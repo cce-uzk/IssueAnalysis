@@ -1,7 +1,25 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
+
+use ILIAS\Filesystem\Stream\Streams;
+use ILIAS\HTTP\Response\ResponseHeader;
+use ILIAS\Plugin\xial\Service\DoubleSubmissionGuard;
+use ILIAS\Refinery\Factory as Refinery;
 
 /**
  * Main GUI controller for IssueAnalysis plugin
@@ -13,6 +31,11 @@ require_once __DIR__ . '/bootstrap.php';
  */
 class ilIssueAnalysisGUI
 {
+    /** Session key of the filter values, read by ilIssueAnalysisTableDataRetrieval */
+    public const SESSION_FILTER = 'xial_filter';
+
+    private const TIME_RANGES = ['today', 'yesterday', 'last_week', 'last_month', 'last_3_months'];
+
     private ilCtrl $ctrl;
     private ilGlobalPageTemplate $tpl;
     private ilLanguage $lng;
@@ -21,11 +44,13 @@ class ilIssueAnalysisGUI
     private \ILIAS\UI\Renderer $renderer;
     private \ILIAS\HTTP\Services $http;
     private \ILIAS\Data\Factory $data_factory;
+    private Refinery $refinery;
     private ilAccessHandler $access;
     private ilIssueAnalysisPlugin $plugin;
     private ilIssueAnalysisRepo $repo;
     private ilIssueAnalysisSettings $settings;
     private ilIssueAnalysisImporter $importer;
+    private ilLogger $logger;
 
     public function __construct()
     {
@@ -39,16 +64,12 @@ class ilIssueAnalysisGUI
         $this->renderer = $DIC->ui()->renderer();
         $this->http = $DIC->http();
         $this->data_factory = new \ILIAS\Data\Factory();
+        $this->refinery = $DIC->refinery();
+        $this->logger = $DIC->logger()->xial();
         $this->access = $DIC->access();
 
         $this->plugin = ilIssueAnalysisPlugin::getInstance();
 
-        // Load required classes
-        require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisSettings.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisImporter.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisTableGUI.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisSanitizer.php';
         $this->repo = new ilIssueAnalysisRepo();
         $this->settings = new ilIssueAnalysisSettings();
         $this->importer = new ilIssueAnalysisImporter();
@@ -108,9 +129,8 @@ class ilIssueAnalysisGUI
     {
         global $DIC;
         $user = $DIC->user();
-        return $user->getId() === ANONYMOUS_USER_ID ? false :
-               $this->access->checkAccess('read', '', SYSTEM_FOLDER_ID) ||
-               $user->getType() === 'admin';
+        return $user->getId() !== ANONYMOUS_USER_ID
+            && $this->access->checkAccess('read', '', SYSTEM_FOLDER_ID);
     }
 
     /**
@@ -118,9 +138,8 @@ class ilIssueAnalysisGUI
      */
     private function setTabs(): void
     {
-        // Main GUI only shows list and statistics tabs
-        // Settings are handled separately in ConfigGUI
-        // No back navigation tab to Administration (user preference)
+        // Settings are part of the plugin configuration (ilIssueAnalysisConfigGUI);
+        // the breadcrumb leads back to the administration
         $this->tabs->addTab(
             'list',
             $this->plugin->txt('tab_list'),
@@ -143,7 +162,7 @@ class ilIssueAnalysisGUI
         $this->tpl->setTitle($this->plugin->txt('plugin_title'));
 
         // Import button - handle within current context with double-submission prevention
-        $import_token = \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::generateToken('import');
+        $import_token = DoubleSubmissionGuard::generateToken('import');
         $this->ctrl->setParameter($this, 'token', $import_token);
         $import_button = $this->ui_factory->button()->primary(
             $this->plugin->txt('btn_import_now'),
@@ -152,7 +171,7 @@ class ilIssueAnalysisGUI
         $this->ctrl->setParameter($this, 'token', '');
 
         // Clear all data button with double-submission prevention
-        $clear_token = \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::generateToken('clearData');
+        $clear_token = DoubleSubmissionGuard::generateToken('clearData');
         $this->ctrl->setParameter($this, 'token', $clear_token);
         $clear_button = $this->ui_factory->button()->standard(
             $this->plugin->txt('btn_clear_all_data'),
@@ -160,11 +179,9 @@ class ilIssueAnalysisGUI
         );
         $this->ctrl->setParameter($this, 'token', '');
 
-        // Create professional filter using ILIAS Filter Service
-        $filter_ui = $this->createProfessionalFilter();
+        $filter_ui = $this->createFilter();
 
         // Create table
-        require_once __DIR__ . '/class.ilIssueAnalysisTableGUI.php';
         $table_gui = new ilIssueAnalysisTableGUI($this);
         $table = $table_gui->getHTML();
 
@@ -179,9 +196,9 @@ class ilIssueAnalysisGUI
     }
 
     /**
-     * Create professional filter using ILIAS Filter Service (like ResourceOverviewGUI)
+     * Filter of the list; its values are kept in the session for the data retrieval
      */
-    private function createProfessionalFilter(): string
+    private function createFilter(): string
     {
         global $DIC;
         $filter_service = $DIC->uiService()->filter();
@@ -208,10 +225,10 @@ class ilIssueAnalysisGUI
 
         if ($filter_data) {
             // Filter has data - save to session
-            $_SESSION['xial_filter'] = $filter_data;
+            ilSession::set(self::SESSION_FILTER, $filter_data);
         } else {
             // No filter data - clear session data to remove filtering
-            unset($_SESSION['xial_filter']);
+            ilSession::clear(self::SESSION_FILTER);
         }
 
         return $this->renderer->render($filter);
@@ -219,6 +236,8 @@ class ilIssueAnalysisGUI
 
     /**
      * Get filter items for ILIAS Filter Service
+     *
+     * @return array<string, \ILIAS\UI\Component\Input\Container\Filter\FilterInput>
      */
     private function getFilterItems(): array
     {
@@ -251,16 +270,16 @@ class ilIssueAnalysisGUI
             $this->plugin->txt('filter_search')
         );
 
-        // NEW: Show ignored errors as select (checkbox doesn't work in filter)
+        // A select instead of a checkbox, as checkboxes are not available as filter inputs
         $show_ignored_options = [
-            '0' => $this->plugin->txt('filter_show_ignored_no'),
-            '1' => $this->plugin->txt('filter_show_ignored_yes')
+            'hide' => $this->plugin->txt('filter_show_ignored_no'),
+            'show' => $this->plugin->txt('filter_show_ignored_yes')
         ];
 
         $filter_items['show_ignored'] = $this->ui_factory->input()->field()->select(
             $this->plugin->txt('filter_show_ignored'),
             $show_ignored_options
-        )->withValue('0'); // Default: don't show ignored
+        )->withValue('hide'); // Default: don't show ignored
 
         return $filter_items;
     }
@@ -273,22 +292,20 @@ class ilIssueAnalysisGUI
     private function importNow(): void
     {
         // Prevent double submission
-        $token = $_GET['token'] ?? '';
-        if (!\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::validateAndConsumeToken('import', $token)) {
+        $token = $this->getQueryString('token');
+        if (!DoubleSubmissionGuard::validateAndConsumeToken('import', $token)) {
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_invalid_token'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
         // Additional cooldown check (prevents rapid re-clicks even with new tokens)
-        if (\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::isInCooldown('import', 5)) {
+        if (DoubleSubmissionGuard::isInCooldown('import', 5)) {
             $this->tpl->setOnScreenMessage('info', $this->plugin->txt('msg_import_running'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
         try {
-            \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::markExecuted('import');
+            DoubleSubmissionGuard::markExecuted('import');
             $result = $this->importer->importLogs(false);
 
             if ($result['success'] || $result['imported'] > 0) {
@@ -337,26 +354,13 @@ class ilIssueAnalysisGUI
             }
 
         } catch (Exception $e) {
+            $this->logger->error('Manual import failed: ' . $e->getMessage());
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_import_failed'));
         }
 
         $this->showList();
     }
 
-    /**
-     * Reset source tracking
-     */
-    private function resetTracking(): void
-    {
-        try {
-            $this->repo->clearSourceTracking();
-            $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_tracking_cleared'));
-        } catch (Exception $e) {
-            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_clear_tracking_failed'));
-        }
-
-        $this->showList();
-    }
 
     /**
      * Clear all imported data
@@ -364,25 +368,24 @@ class ilIssueAnalysisGUI
     private function clearAllData(): void
     {
         // Prevent double submission
-        $token = $_GET['token'] ?? '';
-        if (!\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::validateAndConsumeToken('clearData', $token)) {
+        $token = $this->getQueryString('token');
+        if (!DoubleSubmissionGuard::validateAndConsumeToken('clearData', $token)) {
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_invalid_token'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
         // Additional cooldown check
-        if (\ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::isInCooldown('clearData', 5)) {
+        if (DoubleSubmissionGuard::isInCooldown('clearData', 5)) {
             $this->tpl->setOnScreenMessage('info', $this->plugin->txt('msg_operation_running'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
         try {
-            \ILIAS\Plugin\xial\Service\DoubleSubmissionGuard::markExecuted('clearData');
+            DoubleSubmissionGuard::markExecuted('clearData');
             $this->repo->clearAllData();
             $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_all_data_cleared'));
         } catch (Exception $e) {
+            $this->logger->error('Clearing all data failed: ' . $e->getMessage());
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_clear_data_failed'));
         }
 
@@ -394,18 +397,9 @@ class ilIssueAnalysisGUI
      */
     public function handleTableActions(): void
     {
-        $request = $this->http->request();
-        $query_params = $request->getQueryParams();
-
-
-        // Handle namespaced parameters from URL builder (following CustomMetaBarLinks pattern)
-        $action = $query_params['error_entry_table_action'] ?? '';
-        $ids = $query_params['error_entry_ids'] ?? [];
-
-        if (!is_array($ids)) {
-            $ids = [$ids];
-        }
-        $ids = array_map('intval', $ids);
+        // Parameters are namespaced by the URL builder of ilIssueAnalysisTableGUI::createActions()
+        $action = $this->getQueryString('error_entry_table_action');
+        $ids = $this->getTableRowIds();
 
         switch ($action) {
             case 'viewDetails':
@@ -416,7 +410,7 @@ class ilIssueAnalysisGUI
                 break;
 
             case 'ignoreHash':
-                // NEW: Ignore all errors of this type
+                // Hide all entries with the stacktrace hash of the selected entry
                 if (count($ids) === 1) {
                     global $DIC;
                     $userId = $DIC->user()->getId();
@@ -434,11 +428,8 @@ class ilIssueAnalysisGUI
                 break;
 
             case 'unignoreHash':
-                // NEW: Un-ignore all errors of this type (make visible again)
+                // Show all entries with the stacktrace hash of the selected entry again
                 if (count($ids) === 1) {
-                    global $DIC;
-                    $userId = $DIC->user()->getId();
-
                     // Get stacktrace_hash for this error code
                     $hash = $this->repo->getHashForErrorCode($this->repo->getLogEntry($ids[0])['code'] ?? '');
 
@@ -480,16 +471,14 @@ class ilIssueAnalysisGUI
         // Set custom page title
         $this->tpl->setTitle($this->plugin->txt('detail_title'));
 
-        // Get ID from various possible sources - use standard ILIAS methods
-        $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+        $id = $this->getQueryInt('id');
 
         if (!$id) {
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_no_id_provided'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
-        // Context-aware tab navigation (CustomMetaBarLinks pattern)
+        // The detail view replaces the tabs by a back link to the list
         $this->tabs->clearTargets();
         $this->tabs->setBackTarget(
             $this->plugin->txt('back_to_list'),
@@ -501,16 +490,15 @@ class ilIssueAnalysisGUI
             $this->plugin->txt('tab_view_details'),
             $this->ctrl->getLinkTarget($this, 'viewDetails')
         );
-        $this->tabs->setTabActive('view_details');
+        $this->tabs->activateTab('view_details');
 
-        // NEW: Use lazy-loading to get full content from original file
+        // Stacktrace and request data are read from the original error file
         $errorLogDir = $this->settings->getErrorLogDirectory();
         $entry = $this->repo->getLogEntryWithFullContent($id, $errorLogDir);
 
         if (!$entry) {
             $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('msg_entry_not_found'));
             $this->ctrl->redirect($this, 'showList');
-            return;
         }
 
         // Create detail view
@@ -537,7 +525,9 @@ class ilIssueAnalysisGUI
 
         $basic_info_items = [];
         foreach ($basic_info as $label => $value) {
-            $basic_info_items[$label] = (string) $value;
+            // The descriptive listing outputs its values as HTML; file and message
+            // can contain HTML from the failed request
+            $basic_info_items[$label] = htmlspecialchars((string) $value);
         }
 
         $sections[] = $this->ui_factory->panel()->standard(
@@ -571,210 +561,18 @@ class ilIssueAnalysisGUI
                 ? $sanitizer->sanitizeTextContent($fullErrorContent)
                 : $fullErrorContent;
 
-            $error_content = $this->ui_factory->legacy(
-                '<div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">' .
-                '<div style="margin-bottom: 10px;">' .
-                '<button onclick="copyErrorContent(\'' . $contentId . '\', this)" ' .
-                'style="background: #007cba; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 10px;">' . htmlspecialchars($this->plugin->txt('detail_copy_original')) . '</button>' .
-                '<button onclick="copyErrorContent(\'' . $sanitizedContentId . '\', this)" ' .
-                'style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;" ' .
-                'title="' . htmlspecialchars($this->plugin->txt('detail_copy_safe_tooltip')) . '">' . htmlspecialchars($this->plugin->txt('detail_copy_safe_sharing')) . '</button>' .
-                '</div>' .
-                '<pre id="' . $contentId . '" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; margin: 0; font-family: monospace; font-size: 12px; line-height: 1.4;">' .
-                htmlspecialchars($displayContent) .
-                '</pre>' .
-                '<pre id="' . $sanitizedContentId . '" style="display: none;">' .
-                htmlspecialchars($sanitizedContent) .
-                '</pre>' .
-                '</div>' .
-                '<script>
-                function copyErrorContent(contentId, button) {
-                    var content = document.getElementById(contentId);
-                    if (!content) {
-                        return;
-                    }
-
-                    var originalText = button.textContent;
-                    var originalBackground = button.style.background;
-
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(content.textContent).then(function() {
-                            button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copied')) . '";
-                            button.style.background = "#28a745";
-                            setTimeout(function() {
-                                button.textContent = originalText;
-                                button.style.background = originalBackground;
-                            }, 2000);
-                        }).catch(function(err) {
-                            fallbackCopy(content, button, originalText, originalBackground);
-                        });
-                    } else {
-                        fallbackCopy(content, button, originalText, originalBackground);
-                    }
-                }
-
-                function fallbackCopy(content, button, originalText, originalBackground) {
-                    try {
-                        var wasHidden = content.style.display === "none";
-                        if (wasHidden) {
-                            content.style.display = "block";
-                            content.style.position = "absolute";
-                            content.style.left = "-9999px";
-                        }
-
-                        var range = document.createRange();
-                        range.selectNodeContents(content);
-                        var selection = window.getSelection();
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-
-                        var success = document.execCommand("copy");
-                        selection.removeAllRanges();
-
-                        if (wasHidden) {
-                            content.style.display = "none";
-                            content.style.position = "";
-                            content.style.left = "";
-                        }
-
-                        if (success) {
-                            button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copied')) . '";
-                            button.style.background = "#28a745";
-                            setTimeout(function() {
-                                button.textContent = originalText;
-                                button.style.background = originalBackground;
-                            }, 2000);
-                        } else {
-                            button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copy_failed')) . '";
-                            setTimeout(function() {
-                                button.textContent = originalText;
-                                button.style.background = originalBackground;
-                            }, 3000);
-                        }
-                    } catch (e) {
-                        button.textContent = "' . htmlspecialchars($this->plugin->txt('detail_copy_failed')) . '";
-                        setTimeout(function() {
-                            button.textContent = originalText;
-                            button.style.background = originalBackground;
-                        }, 3000);
-                    }
-                }
-                </script>'
-            );
             $sections[] = $this->ui_factory->panel()->standard(
                 $this->plugin->txt('detail_full_error_content') . ' (' . strlen($fullErrorContent) . ' ' . $this->plugin->txt('detail_characters') . ')',
-                [$error_content]
+                $this->createErrorContent($contentId, $displayContent, $sanitizedContentId, $sanitizedContent)
             );
-        } else {
-            // No error content available to display
         }
 
         // No back button needed - using tab navigation now
         $this->tpl->setContent($this->renderer->render($sections));
     }
 
-    /**
-     * Show settings
-     */
-    private function showSettings(): void
-    {
-        // Set custom page title
-        $this->tpl->setTitle($this->plugin->txt('tab_settings'));
 
-        $form = $this->createSettingsForm();
-        $this->tpl->setContent($this->renderer->render($form));
-    }
 
-    /**
-     * Create settings form
-     */
-    private function createSettingsForm(): \ILIAS\UI\Component\Input\Container\Form\Standard
-    {
-        $form_fields = [];
-
-        $form_fields['retention_days'] = $this->ui_factory->input()->field()->numeric(
-            $this->plugin->txt('settings_retention_days'),
-            $this->plugin->txt('settings_retention_days_info')
-        )
-            ->withValue($this->settings->getRetentionDays())
-            ->withRequired(true);
-
-        $form_fields['max_records'] = $this->ui_factory->input()->field()->numeric(
-            $this->plugin->txt('settings_max_records'),
-            $this->plugin->txt('settings_max_records_info')
-        )
-            ->withValue($this->settings->getMaxRecords())
-            ->withRequired(true);
-
-        $form_fields['mask_sensitive'] = $this->ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('settings_mask_sensitive'),
-            $this->plugin->txt('settings_mask_sensitive_info')
-        )
-            ->withValue($this->settings->getMaskSensitive());
-
-        $form_fields['cron_enabled'] = $this->ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('settings_cron_enabled'),
-            $this->plugin->txt('settings_cron_enabled_info')
-        )
-            ->withValue($this->settings->getCronEnabled());
-
-        $form_fields['import_time_limit'] = $this->ui_factory->input()->field()->numeric(
-            $this->plugin->txt('settings_import_time_limit'),
-            $this->plugin->txt('settings_import_time_limit_info')
-        )
-            ->withValue($this->settings->getImportTimeLimit())
-            ->withRequired(true);
-
-        $form_fields['import_line_limit'] = $this->ui_factory->input()->field()->numeric(
-            $this->plugin->txt('settings_import_line_limit'),
-            $this->plugin->txt('settings_import_line_limit_info')
-        )
-            ->withValue($this->settings->getImportLineLimit())
-            ->withRequired(true);
-
-        return $this->ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveSettings'),
-            $form_fields
-        );
-    }
-
-    /**
-     * Save settings
-     */
-    private function saveSettings(): void
-    {
-        $form = $this->createSettingsForm();
-        $request = $this->http->request();
-
-        if ($request->getMethod() === 'POST') {
-            $form = $form->withRequest($request);
-            $form_data = $form->getData();
-
-            if ($form_data) {
-                // Validate settings
-                $errors = $this->settings->validateSettings($form_data);
-
-                if (empty($errors)) {
-                    // Save settings
-                    $this->settings->setRetentionDays((int) $form_data['retention_days']);
-                    $this->settings->setMaxRecords((int) $form_data['max_records']);
-                    $this->settings->setMaskSensitive((bool) $form_data['mask_sensitive']);
-                    $this->settings->setCronEnabled((bool) $form_data['cron_enabled']);
-                    $this->settings->setImportTimeLimit((int) $form_data['import_time_limit']);
-                    $this->settings->setImportLineLimit((int) $form_data['import_line_limit']);
-
-                    $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_settings_saved'));
-                    $this->ctrl->redirect($this, 'showSettings');
-                } else {
-                    foreach ($errors as $errorKey) {
-                        $this->tpl->setOnScreenMessage('failure', $this->plugin->txt($errorKey));
-                    }
-                }
-            }
-        }
-
-        $this->tpl->setContent($this->renderer->render($form));
-    }
 
     /**
      * Show comprehensive error analysis statistics
@@ -785,11 +583,10 @@ class ilIssueAnalysisGUI
         $this->tpl->setTitle($this->plugin->txt('stats_title'));
 
 
-        // Get selected time range from request (both POST and GET)
-        $request = $this->http->request();
-        $post_params = $request->getParsedBody();
-        $query_params = $request->getQueryParams();
-        $time_range = $post_params['time_range'] ?? $query_params['time_range'] ?? 'last_week';
+        $time_range = $this->getQueryString('time_range');
+        if (!in_array($time_range, self::TIME_RANGES, true)) {
+            $time_range = 'last_week';
+        }
 
         // Create time range selector
         $time_range_selector = $this->createTimeRangeSelector($time_range);
@@ -819,17 +616,6 @@ class ilIssueAnalysisGUI
             );
         }
 
-        // Severity Distribution Chart (with time range)
-        // Currently commented out as there's only one severity type (Error)
-        /*
-        if (!empty($stats['patterns']['severity_chart_data'])) {
-            $severity_chart = $this->createSeverityChart($stats['patterns']['severity_chart_data']);
-            $panels[] = $this->ui_factory->panel()->standard(
-                $this->plugin->txt('stats_severity_distribution') . ' (' . $this->plugin->txt('stats_time_' . $time_range) . ')',
-                [$severity_chart]
-            );
-        }
-        */
 
         // Source File Analysis with Chart
         if (!empty($stats['sources'])) {
@@ -846,85 +632,29 @@ class ilIssueAnalysisGUI
 
             // Top error files list with detailed information
             if (!empty($sources['top_error_files'])) {
-                $file_content = '<div style="font-family: inherit;">';
+                $file_panels = [];
                 foreach ($sources['top_error_files'] as $file_data) {
-                    $filename = basename($file_data['file']);
-
-                    // Build filename with count and time info
-                    $filename_info = [];
-                    $filename_info[] = $file_data['count'] . ' ' . $this->plugin->txt('stats_errors');
-
-                    // Add time information if available
-                    if (!empty($file_data['latest_occurrence'])) {
-                        $latest = new DateTime($file_data['latest_occurrence']);
-                        $now = new DateTime();
-                        $diff = $now->diff($latest);
-
-                        if ($diff->days > 0) {
-                            $time_ago = sprintf($this->plugin->txt('time_days_ago'), $diff->days);
-                        } elseif ($diff->h > 0) {
-                            $time_ago = sprintf($this->plugin->txt('time_hours_ago'), $diff->h);
-                        } else {
-                            $time_ago = sprintf($this->plugin->txt('time_minutes_ago'), $diff->i);
-                        }
-                        $filename_info[] = $time_ago;
-                    }
-
-                    $file_content .= '<div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #007cba; border-radius: 4px;">';
-                    $file_content .= '<div style="font-weight: bold; color: #007cba; margin-bottom: 8px;">';
-                    $file_content .= htmlspecialchars($filename) . ' <span style="color: #666; font-weight: normal;">(' . implode(', ', $filename_info) . ')</span>';
-                    $file_content .= '</div>';
-
-                    // Add unique messages if available
-                    if (!empty($file_data['unique_messages'])) {
-                        $file_content .= '<div style="font-size: 0.9em; color: #555;">';
-                        $file_content .= '<strong>' . $this->plugin->txt('stats_error_messages') . ':</strong>';
-                        foreach ($file_data['unique_messages'] as $message) {
-                            $file_content .= '<div style="margin: 4px 0 4px 16px; padding: 4px 8px; background: #fff; border-radius: 3px; border-left: 2px solid #dc3545;">';
-                            $file_content .= '• ' . htmlspecialchars($message);
-                            $file_content .= '</div>';
-                        }
-                        $file_content .= '</div>';
-                    }
-                    $file_content .= '</div>';
+                    $file_panels[] = $this->createErrorFilePanel($file_data);
                 }
-                $file_content .= '</div>';
 
                 $panels[] = $this->ui_factory->panel()->standard(
                     $this->plugin->txt('stats_top_error_files_list'),
-                    [$this->ui_factory->legacy($file_content)]
+                    $file_panels
                 );
             }
         }
 
-        // Error Pattern Analysis
-        if (!empty($stats['patterns'])) {
-            $patterns = $stats['patterns'];
-
-
-            // Critical errors
-            if (!empty($patterns['critical_errors'])) {
-                $critical_content = '<div style="font-family: inherit;">';
-                foreach ($patterns['critical_errors'] as $error) {
-                    $critical_content .= '<div style="margin-bottom: 15px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">';
-                    $critical_content .= '<div style="font-weight: bold; color: #721c24;">' .
-                                       htmlspecialchars(strtoupper($error['severity'])) .
-                                       ($error['code'] ? ' (' . htmlspecialchars($error['code']) . ')' : '') . '</div>';
-                    $critical_content .= '<div style="margin: 5px 0; font-size: 0.9em;">' . htmlspecialchars($error['message']) . '</div>';
-                    if ($error['file']) {
-                        $critical_content .= '<div style="font-size: 0.8em; color: #6c757d;">' .
-                                           htmlspecialchars(basename($error['file'])) . ' - ' .
-                                           htmlspecialchars($error['timestamp']) . '</div>';
-                    }
-                    $critical_content .= '</div>';
-                }
-                $critical_content .= '</div>';
-
-                $panels[] = $this->ui_factory->panel()->standard(
-                    $this->plugin->txt('stats_critical_errors') . ' (' . $this->plugin->txt('stats_time_' . $time_range) . ')',
-                    [$this->ui_factory->legacy($critical_content)]
-                );
+        // Critical errors
+        if (!empty($stats['patterns']['critical_errors'])) {
+            $items = [];
+            foreach ($stats['patterns']['critical_errors'] as $error) {
+                $items[] = $this->createCriticalErrorItem($error);
             }
+
+            $panels[] = $this->ui_factory->panel()->listing()->standard(
+                $this->plugin->txt('stats_critical_errors') . ' (' . $this->plugin->txt('stats_time_' . $time_range) . ')',
+                [$this->ui_factory->item()->group('', $items)]
+            );
         }
 
         // Render time range selector and panels
@@ -937,19 +667,140 @@ class ilIssueAnalysisGUI
     }
 
     /**
+     * Content of the error file with buttons to copy the original or the sanitized text
+     *
+     * The text is shown with a plugin template, as the UI framework of ILIAS 9 has
+     * no component for preformatted text.
+     *
+     * @return \ILIAS\UI\Component\Component[]
+     */
+    private function createErrorContent(
+        string $content_id,
+        string $content,
+        string $share_id,
+        string $share_content
+    ): array {
+        $this->tpl->addCss($this->plugin->getDirectory() . '/css/xial.css');
+        $this->tpl->addJavaScript($this->plugin->getDirectory() . '/js/xial.js');
+
+        $template = $this->plugin->getTemplate('default/tpl.xial_error_content.html');
+        $template->setVariable('CONTENT_ID', $content_id);
+        $template->setVariable('CONTENT', htmlspecialchars($content));
+        $template->setVariable('SHARE_ID', $share_id);
+        $template->setVariable('SHARE_CONTENT', htmlspecialchars($share_content));
+
+        return [
+            $this->createCopyButton($this->plugin->txt('detail_copy_original'), $content_id),
+            $this->createCopyButton($this->plugin->txt('detail_copy_safe_sharing'), $share_id),
+            $this->ui_factory->legacy($template->get())
+        ];
+    }
+
+    /**
+     * Button that copies the text of an element to the clipboard, see js/xial.js
+     */
+    private function createCopyButton(string $label, string $content_id): \ILIAS\UI\Component\Button\Standard
+    {
+        // No action, so that the button does not navigate; the click is handled by the script
+        $arguments = implode(', ', array_map(
+            static fn(string $value): string => (string) json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+            [$content_id, $this->plugin->txt('detail_copied'), $this->plugin->txt('detail_copy_failed')]
+        ));
+
+        return $this->ui_factory->button()->standard($label, '')
+            ->withOnLoadCode(static fn(string $id): string => "il.xial.bindCopy('$id', $arguments);");
+    }
+
+    /**
+     * Sub panel of a file with errors: number, last occurrence and the distinct messages
+     *
+     * Texts are escaped, as the UI components output them as HTML and the messages
+     * can contain HTML from the failed request.
+     *
+     * @param array<string, mixed> $file_data
+     */
+    private function createErrorFilePanel(array $file_data): \ILIAS\UI\Component\Panel\Sub
+    {
+        $values = [
+            $this->plugin->txt('stats_errors') => (string) $file_data['count']
+        ];
+        if (!empty($file_data['latest_occurrence'])) {
+            $values[$this->plugin->txt('stats_latest_occurrence')] = $this->formatTimeAgo((string) $file_data['latest_occurrence']);
+        }
+
+        $content = [$this->ui_factory->listing()->characteristicValue()->text($values)];
+        if (!empty($file_data['unique_messages'])) {
+            $content[] = $this->ui_factory->listing()->unordered(
+                array_map(static fn($message): string => htmlspecialchars((string) $message), $file_data['unique_messages'])
+            );
+        }
+
+        return $this->ui_factory->panel()->sub(htmlspecialchars(basename((string) $file_data['file'])), $content);
+    }
+
+    /**
+     * Item of a critical error, linked to its detail view
+     *
+     * @param array<string, mixed> $error
+     */
+    private function createCriticalErrorItem(array $error): \ILIAS\UI\Component\Item\Item
+    {
+        $title = htmlspecialchars((string) $error['message']);
+
+        $properties = [
+            $this->plugin->txt('col_severity') => htmlspecialchars(strtoupper((string) $error['severity'])),
+            $this->plugin->txt('detail_error_code') => htmlspecialchars((string) ($error['code'] ?: '-')),
+            $this->plugin->txt('col_timestamp') => htmlspecialchars((string) $error['timestamp'])
+        ];
+        if (!empty($error['file'])) {
+            $properties[$this->plugin->txt('col_file')] = htmlspecialchars(basename((string) $error['file']));
+        }
+
+        $item_title = !empty($error['id'])
+            ? $this->ui_factory->link()->standard($title, $this->getDetailsUrl((int) $error['id']))
+            : $title;
+
+        return $this->ui_factory->item()->standard($item_title)->withProperties($properties);
+    }
+
+    /**
+     * Link target of the detail view of an entry
+     */
+    private function getDetailsUrl(int $id): string
+    {
+        $this->ctrl->setParameter($this, 'id', $id);
+        $url = $this->ctrl->getLinkTarget($this, 'viewDetails');
+        $this->ctrl->clearParameterByClass(self::class, 'id');
+
+        return $url;
+    }
+
+    /**
+     * Relative time like "3 days ago" for a timestamp
+     */
+    private function formatTimeAgo(string $timestamp): string
+    {
+        $diff = (new DateTime())->diff(new DateTime($timestamp));
+
+        if ($diff->days > 0) {
+            return sprintf($this->plugin->txt('time_days_ago'), $diff->days);
+        }
+        if ($diff->h > 0) {
+            return sprintf($this->plugin->txt('time_hours_ago'), $diff->h);
+        }
+        return sprintf($this->plugin->txt('time_minutes_ago'), $diff->i);
+    }
+
+    /**
      * Create time range selector dropdown
      */
     private function createTimeRangeSelector(string $selectedRange): string
     {
-        $time_ranges = [
-            'today' => $this->plugin->txt('stats_time_today'),
-            'yesterday' => $this->plugin->txt('stats_time_yesterday'),
-            'last_week' => $this->plugin->txt('stats_time_last_week'),
-            'last_month' => $this->plugin->txt('stats_time_last_month'),
-            'last_3_months' => $this->plugin->txt('stats_time_last_3_months')
-        ];
+        $time_ranges = [];
+        foreach (self::TIME_RANGES as $range) {
+            $time_ranges[$range] = $this->plugin->txt('stats_time_' . $range);
+        }
 
-        // Create modern ILIAS 9 UI select input
         $select_input = $this->ui_factory->input()->field()->select(
             $this->plugin->txt('stats_time_range'),
             $time_ranges
@@ -978,6 +829,8 @@ class ilIssueAnalysisGUI
 
     /**
      * Create time range chart using ILIAS Bar Chart
+     *
+     * @param array<string, int> $data Number of errors per period
      */
     private function createTimeRangeChart(array $data, string $timeRange): \ILIAS\UI\Component\Chart\Bar\Bar
     {
@@ -995,27 +848,11 @@ class ilIssueAnalysisGUI
         );
     }
 
-    /**
-     * Create severity distribution using ILIAS Bar Chart
-     */
-    private function createSeverityChart(array $data): \ILIAS\UI\Component\Chart\Bar\Bar
-    {
-        $c_dimension = $this->data_factory->dimension()->cardinal();
-        $count_label = $this->plugin->txt('chart_count');
-        $dataset = $this->data_factory->dataset([$count_label => $c_dimension]);
-
-        foreach ($data as $severity => $count) {
-            $dataset = $dataset->withPoint($this->formatSeverity($severity), [$count_label => $count]);
-        }
-
-        return $this->ui_factory->chart()->bar()->horizontal(
-            $this->plugin->txt('stats_severity_title'),
-            $dataset
-        );
-    }
 
     /**
      * Create file error distribution using ILIAS Bar Chart
+     *
+     * @param array<string, int> $data Number of errors per file
      */
     private function createFileChart(array $data, string $timeRange): \ILIAS\UI\Component\Chart\Bar\Bar
     {
@@ -1035,6 +872,8 @@ class ilIssueAnalysisGUI
 
     /**
      * Export data
+     *
+     * @param int[] $ids
      */
     private function exportData(array $ids, string $format): void
     {
@@ -1052,15 +891,12 @@ class ilIssueAnalysisGUI
 
     /**
      * Export as CSV
+     *
+     * @param list<array<string, mixed>> $entries
      */
     private function exportCSV(array $entries): void
     {
-        $filename = 'error_log_' . date('Y-m-d_H-i-s') . '.csv';
-
-        header('Content-Type: text/csv');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-        $output = fopen('php://output', 'w');
+        $output = fopen('php://temp', 'w+');
 
         // CSV headers (translated)
         $headers = [
@@ -1092,59 +928,97 @@ class ilIssueAnalysisGUI
             fputcsv($output, $row);
         }
 
+        rewind($output);
+        $content = (string) stream_get_contents($output);
         fclose($output);
-        exit;
+
+        $this->deliver($content, 'text/csv; charset=utf-8', 'csv');
     }
 
     /**
      * Export as JSON
+     *
+     * @param list<array<string, mixed>> $entries
      */
     private function exportJSON(array $entries): void
     {
-        $filename = 'error_log_' . date('Y-m-d_H-i-s') . '.json';
-
-        header('Content-Type: application/json');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-        echo json_encode($entries, JSON_PRETTY_PRINT);
-        exit;
+        $this->deliver(
+            (string) json_encode($entries, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+            'application/json; charset=utf-8',
+            'json'
+        );
     }
 
     /**
-     * Helper methods
+     * Send an export file via the ILIAS HTTP service and end the request
      */
-    private function formatSeverity(string $severity): string
+    private function deliver(string $content, string $content_type, string $extension): void
     {
-        $severity_key = 'severity_' . str_replace('_', '_', strtolower($severity));
-        return $this->plugin->txt($severity_key) ?: ucfirst($severity);
+        $filename = 'error_log_' . date('Y-m-d_H-i-s') . '.' . $extension;
+
+        $this->http->saveResponse(
+            $this->http->response()
+                ->withHeader(ResponseHeader::CONTENT_TYPE, $content_type)
+                ->withHeader(ResponseHeader::CONTENT_DISPOSITION, 'attachment; filename="' . $filename . '"')
+                ->withBody(Streams::ofString($content))
+        );
+        $this->http->sendResponse();
+        $this->http->close();
     }
 
-    private function formatUser(?int $userId): string
+    /**
+     * Read a string parameter from the query, '' if not set
+     */
+    private function getQueryString(string $key): string
     {
-        if (!$userId) {
-            return '-';
+        $query = $this->http->wrapper()->query();
+        if (!$query->has($key)) {
+            return '';
         }
-
-        try {
-            $user = ilObjectFactory::getInstanceByObjId($userId);
-            if ($user instanceof ilObjUser) {
-                return $user->getFullname() . ' (' . $userId . ')';
-            }
-        } catch (Exception $e) {
-            // User might not exist anymore
-        }
-
-        return 'User ' . $userId;
+        return $query->retrieve($key, $this->refinery->byTrying([
+            $this->refinery->kindlyTo()->string(),
+            $this->refinery->always('')
+        ]));
     }
 
-    private function formatRequestData(string $requestData): string
+    /**
+     * Read an integer parameter from the query, 0 if not set or invalid
+     */
+    private function getQueryInt(string $key): int
     {
-        $data = json_decode($requestData, true);
-        if ($data) {
-            return json_encode($data, JSON_PRETTY_PRINT);
+        $query = $this->http->wrapper()->query();
+        if (!$query->has($key)) {
+            return 0;
         }
-        return $requestData;
+        return $query->retrieve($key, $this->refinery->byTrying([
+            $this->refinery->kindlyTo()->int(),
+            $this->refinery->always(0)
+        ]));
     }
+
+    /**
+     * Row IDs sent by the data table, as a single value or a list
+     *
+     * @return int[]
+     */
+    private function getTableRowIds(): array
+    {
+        $query = $this->http->wrapper()->query();
+        if (!$query->has('error_entry_ids')) {
+            return [];
+        }
+        return $query->retrieve('error_entry_ids', $this->refinery->byTrying([
+            $this->refinery->kindlyTo()->listOf($this->refinery->kindlyTo()->int()),
+            $this->refinery->in()->series([
+                $this->refinery->kindlyTo()->int(),
+                $this->refinery->custom()->transformation(static fn(int $id): array => [$id])
+            ]),
+            $this->refinery->always([])
+        ]));
+    }
+
+
+
 
     /**
      * Get plugin object

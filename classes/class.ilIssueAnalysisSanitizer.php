@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -30,13 +43,57 @@ class ilIssueAnalysisSanitizer
 
     private bool $maskSensitive;
 
-    public function __construct(bool $maskSensitive = true)
+    /** @var array{host: string, ilias_root: string, document_root: string, client_id: string, session_prefix: string}|null */
+    private ?array $environment;
+
+    /**
+     * @param array{host: string, ilias_root: string, document_root: string, client_id: string, session_prefix: string}|null $environment
+     *        System values replaced by placeholders; read from the current request if null
+     */
+    public function __construct(bool $maskSensitive = true, ?array $environment = null)
     {
         $this->maskSensitive = $maskSensitive;
+        $this->environment = $environment;
+    }
+
+    /**
+     * System values of the current installation and request
+     *
+     * @return array{host: string, ilias_root: string, document_root: string, client_id: string, session_prefix: string}
+     */
+    private function getEnvironment(): array
+    {
+        if ($this->environment !== null) {
+            return $this->environment;
+        }
+
+        global $DIC;
+        $server = [];
+        $cookies = [];
+        if (isset($DIC) && $DIC->offsetExists('http')) {
+            $request = $DIC->http()->request();
+            $server = $request->getServerParams();
+            $cookies = $request->getCookieParams();
+        }
+
+        $session_id = (string) ($cookies[session_name()] ?? '');
+
+        $this->environment = [
+            'host' => (string) ($server['HTTP_HOST'] ?? $server['SERVER_NAME'] ?? ''),
+            'ilias_root' => defined('ILIAS_ABSOLUTE_PATH') ? (string) ILIAS_ABSOLUTE_PATH : '',
+            'document_root' => (string) ($server['DOCUMENT_ROOT'] ?? ''),
+            'client_id' => defined('CLIENT_ID') ? (string) CLIENT_ID : (string) ($cookies['ilClientId'] ?? ''),
+            'session_prefix' => strlen($session_id) >= 5 ? substr($session_id, 0, 5) : ''
+        ];
+
+        return $this->environment;
     }
 
     /**
      * Sanitize request data array
+     *
+     * @param array<mixed> $data
+     * @return array<mixed>
      */
     public function sanitizeRequestData(array $data): array
     {
@@ -108,6 +165,9 @@ class ilIssueAnalysisSanitizer
 
     /**
      * Sanitize array recursively
+     *
+     * @param array<mixed> $data
+     * @return array<mixed>
      */
     private function sanitizeArray(array $data): array
     {
@@ -176,45 +236,7 @@ class ilIssueAnalysisSanitizer
         return $key;
     }
 
-    /**
-     * Sanitize file paths in stacktraces
-     */
-    private function sanitizeFilePath(string $filePath): string
-    {
-        // Keep only the filename and immediate parent directory
-        $pathParts = explode('/', $filePath);
 
-        if (count($pathParts) > 2) {
-            $fileName = array_pop($pathParts);
-            $parentDir = array_pop($pathParts);
-            return '.../' . $parentDir . '/' . $fileName;
-        }
-
-        return $filePath;
-    }
-
-    /**
-     * Sanitize stacktrace arguments
-     */
-    private function sanitizeStacktraceArgs(string $args): string
-    {
-        // Remove content within parentheses that might contain sensitive data
-        return preg_replace_callback('/\(([^)]*)\)/', function($matches) {
-            $content = $matches[1];
-
-            // If arguments contain sensitive patterns, mask them
-            if (preg_match('/password|token|secret|key/i', $content)) {
-                return '(***)';
-            }
-
-            // Limit argument length to prevent exposure of large data
-            if (strlen($content) > 100) {
-                return '(' . substr($content, 0, 50) . '...[truncated]...)';
-            }
-
-            return $matches[0];
-        }, $args);
-    }
 
     /**
      * Sanitize session ID
@@ -251,57 +273,43 @@ class ilIssueAnalysisSanitizer
      */
     private function performComprehensiveSanitization(string $content): string
     {
-        // Get dynamic values from ILIAS Core
-        global $DIC;
+        $environment = $this->getEnvironment();
+        $host = $environment['host'];
+        $iliasRoot = $environment['ilias_root'];
+        $serverRoot = $iliasRoot !== '' ? dirname($iliasRoot) : '';
+        $documentRoot = $environment['document_root'];
+        $clientId = $environment['client_id'];
+        $sessionPrefix = $environment['session_prefix'];
 
-        // Get current IP address
-        $currentIp = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+        // Values identified by their key in the error file (request data, cookies, session)
+        $content = $this->maskSensitiveValues($content);
+        $content = $this->maskSessionIds($content);
+        $content = $this->maskClientIds($content, $clientId);
+        $content = $this->maskHostNames($content, $host);
 
-        // Get ILIAS paths
-        $iliasRoot = defined('ILIAS_ABSOLUTE_PATH') ? ILIAS_ABSOLUTE_PATH : getcwd();
-        $serverRoot = dirname($iliasRoot);
-
-        // Get client ID
-        $clientId = defined('CLIENT_ID') ? CLIENT_ID : ($_COOKIE['ilClientId'] ?? 'unknown');
-
-        // Get session prefix (from PHPSESSID cookie)
-        $sessionPrefix = 'unknown';
-        if (isset($_COOKIE['PHPSESSID']) && strlen($_COOKIE['PHPSESSID']) >= 5) {
-            $sessionPrefix = substr($_COOKIE['PHPSESSID'], 0, 5);
-        }
-
-        // Dynamic replacements using actual system values
-        if ($currentIp !== 'localhost') {
-            $content = str_replace($currentIp, '[IP_ADDRESS]', $content);
-        }
-
-        if ($iliasRoot) {
+        if ($iliasRoot !== '') {
             $content = str_replace($iliasRoot, '[ILIAS_ROOT]', $content);
         }
 
-        if ($serverRoot && $serverRoot !== $iliasRoot) {
+        if ($serverRoot !== '' && $serverRoot !== '/' && $serverRoot !== $iliasRoot) {
             $content = str_replace($serverRoot, '[SERVER_ROOT]', $content);
         }
 
         // Replace web document root
-        if (isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT'])) {
-            $content = str_replace($_SERVER['DOCUMENT_ROOT'], '[DOC_ROOT]', $content);
+        if ($documentRoot !== '') {
+            $content = str_replace($documentRoot, '[DOC_ROOT]', $content);
         }
 
         // Replace common server paths
         $content = str_replace('/var/www/html', '[DOC_ROOT]', $content);
         $content = str_replace('/var/www', '[WEB_ROOT]', $content);
 
-        // Replace client ID
-        if ($clientId !== 'unknown') {
-            $content = str_replace($clientId, '[CLIENT_ID]', $content);
+        // Replace session IDs starting with the prefix of the current session
+        if ($sessionPrefix !== '') {
+            $content = preg_replace('/\b' . preg_quote($sessionPrefix, '/') . '[a-zA-Z0-9_-]*/', '[SESSION_ID]', $content);
         }
 
-        // Replace session prefix patterns
-        $content = preg_replace('/\b' . preg_quote($sessionPrefix, '/') . '[a-zA-Z0-9_-]*/', '[SESSION_ID]', $content);
-
-        // Static IP patterns
-        $content = preg_replace('/\b(?:10|127|172|192)\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/', '[IP_ADDRESS]', $content);
+        $content = $this->maskIpAddresses($content);
 
         // File system paths
         $content = preg_replace('/\/[a-zA-Z0-9\/._-]*\/ilias[a-zA-Z0-9\/._-]*/', '[ILIAS_PATH]', $content);
@@ -321,6 +329,131 @@ class ilIssueAnalysisSanitizer
         $content = preg_replace('/Server at [^\s]+ Port \d+/', 'Server at [HOSTNAME] Port [PORT]', $content);
 
         return $content;
+    }
+
+    /**
+     * Mask the values of sensitive keys in "KEY : value" and "[key] => value" lines,
+     * as written by ILIAS for request data, cookies, session and server variables
+     */
+    private function maskSensitiveValues(string $content): string
+    {
+        return preg_replace_callback(
+            '/^([ \t]*\[?([A-Za-z0-9_.-]+)\]?[ \t]*(?::|=>)[ \t]*)(\S.*)$/m',
+            fn(array $match): string => $this->isSensitiveKey($match[2])
+                ? $match[1] . '[MASKED]'
+                : $match[0],
+            $content
+        );
+    }
+
+    /**
+     * Mask session IDs in cookies, independent of the session of the current user
+     */
+    private function maskSessionIds(string $content): string
+    {
+        $names = array_unique(['PHPSESSID', session_name() ?: 'PHPSESSID']);
+        foreach ($names as $name) {
+            $quoted = preg_quote($name, '/');
+            $content = preg_replace(
+                '/(\[' . $quoted . '\]\s*=>\s*|\b' . $quoted . '=)[^;\s]+(?: \(SHORTENED FOR SECURITY\))?/',
+                '$1[SESSION_ID]',
+                $content
+            );
+        }
+
+        return $content;
+    }
+
+    /**
+     * Mask the ILIAS client ID in cookies and URLs and as path segment (e.g. data/<client>/)
+     *
+     * The client ID is not replaced everywhere in the text, as short IDs like "uk"
+     * are also part of ordinary words.
+     */
+    private function maskClientIds(string $content, string $currentClientId): string
+    {
+        $pattern = '/(\[ilClientId\]\s*=>\s*|\bilClientId=|[?&]client_id=)([A-Za-z0-9_-]+)/';
+
+        $client_ids = $currentClientId !== '' ? [$currentClientId] : [];
+        if (preg_match_all($pattern, $content, $matches)) {
+            $client_ids = array_merge($client_ids, $matches[2]);
+        }
+
+        $content = preg_replace($pattern, '$1[CLIENT_ID]', $content);
+
+        foreach (array_unique($client_ids) as $client_id) {
+            $content = preg_replace('#/' . preg_quote($client_id, '#') . '(?=/)#', '/[CLIENT_ID]', $content);
+        }
+
+        return $content;
+    }
+
+    /**
+     * Mask the host names of the installation wherever they occur
+     *
+     * The names are taken from the server variables and URLs of the error file, so
+     * that errors of other installations are masked, too.
+     */
+    private function maskHostNames(string $content, string $currentHost): string
+    {
+        $hosts = $currentHost !== '' ? [$currentHost] : [];
+
+        if (preg_match_all(
+            '/^[ \t]*(?:HTTP_HOST|SERVER_NAME|HTTP_X_FORWARDED_HOST|HTTP_X_FORWARDED_SERVER|HTTP_ORIGIN)[ \t]*(?::|=>)[ \t]*(\S+)/mi',
+            $content,
+            $matches
+        )) {
+            $hosts = array_merge($hosts, $matches[1]);
+        }
+        if (preg_match_all('/\bhttps?:\/\/([^\/\s:\'"<>?#]+)/i', $content, $matches)) {
+            $hosts = array_merge($hosts, $matches[1]);
+        }
+
+        $names = [];
+        foreach ($hosts as $host) {
+            $host = strtolower(preg_replace(['#^[a-z][a-z0-9+.-]*://#i', '/:\d+$/', '#/.*$#'], '', $host));
+            // Only real domain names; IP addresses are masked separately
+            if (!str_contains($host, '.') || filter_var($host, FILTER_VALIDATE_IP) !== false) {
+                continue;
+            }
+            $names[] = $host;
+            if (str_starts_with($host, 'www.')) {
+                $names[] = substr($host, 4);
+            }
+        }
+
+        $names = array_unique($names);
+        // Longest names first, so that "www.example.org" is not left as "www.[HOSTNAME]"
+        usort($names, static fn(string $a, string $b): int => strlen($b) - strlen($a));
+
+        return $names === [] ? $content : str_ireplace($names, '[HOSTNAME]', $content);
+    }
+
+    /**
+     * Replace all IPv4 and IPv6 addresses by a placeholder
+     *
+     * Candidates are validated with filter_var(), so that version numbers after a
+     * slash (e.g. "Chrome/143.0.0.0"), times ("07:51:00") and static calls
+     * ("ilCtrl::getCmd") are kept.
+     */
+    private function maskIpAddresses(string $content): string
+    {
+        $content = preg_replace_callback(
+            '/(?<![\w.\/-])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/',
+            static fn(array $match): string => filter_var($match[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+                ? '[IP_ADDRESS]'
+                : $match[0],
+            $content
+        );
+
+        return preg_replace_callback(
+            '/(?<![\w:.])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])/',
+            static fn(array $match): string => preg_match('/[0-9A-Fa-f]/', $match[0]) === 1
+                && filter_var($match[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+                ? '[IP_ADDRESS]'
+                : $match[0],
+            $content
+        );
     }
 
     /**

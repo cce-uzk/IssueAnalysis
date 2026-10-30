@@ -1,570 +1,181 @@
-# IssueAnalysis Plugin for ILIAS 9
+# IssueAnalysis for ILIAS 9
 
-> **A comprehensive error log analysis plugin for ILIAS administrators**
+ILIAS 9 UserInterfaceHook plugin (ID `xial`) for analysing the error files that ILIAS writes to its error log directory. Administrators import the error files into the database and get a filterable list, a detail view and statistics under **Administration → Issue Analysis** ("Fehleranalyse").
 
-The IssueAnalysis plugin is a UIComponent UserInterfaceHook plugin for ILIAS 9 that provides administrators with comprehensive error log analysis capabilities. It integrates seamlessly into the ILIAS administration interface, allowing administrators to import, analyze, and manage ILIAS error logs through a modern, user-friendly interface.
+Identical errors are recognised by a hash of their stacktrace, so error types that occur thousands of times can be hidden with one click. The database only holds metadata; stacktrace and request data of a single error are read from the original error file when the detail view is opened.
 
-**Plugin ID:** `xial`
-**Compatible with:** ILIAS 9.0 - 9.999
-**License:** GPL v3 (same as ILIAS)
+Developed by the CompetenceCenter E-Learning, University of Cologne.
 
-## Table of Contents
+## Contents
 
 - [Features](#features)
-- [System Requirements](#system-requirements)
+- [Requirements](#requirements)
 - [Installation](#installation)
-- [Configuration](#configuration)
+- [Updating](#updating)
+- [Configuration (administrators)](#configuration-administrators)
 - [Usage](#usage)
-- [Security Features](#security-features)
-- [Data Management](#data-management)
+- [Permissions](#permissions)
+- [Data protection and data storage](#data-protection-and-data-storage)
+- [How it works](#how-it-works)
+- [Tests and code style](#tests-and-code-style)
 - [Troubleshooting](#troubleshooting)
-- [Technical Documentation](#technical-documentation)
-- [Development](#development)
-- [Support](#support)
+- [License and contact](#license-and-contact)
 
 ## Features
 
-### Error Log Management
-- **Automated log import** from ILIAS error log directory
-- **Manual import** with "Import Now" button
-- **Incremental import** with file tracking to prevent duplicate imports
-- **Hash-based deduplication** groups identical errors by stacktrace signature
-- **Retention-aware import** (only imports entries within retention period)
-- **Performance limits** with configurable time and line limits
+- Manual import ("Import Now") and optional cron job for the error files of the ILIAS error log directory
+- Incremental import: files that were already imported are skipped; time and entry limit per run
+- Deduplication of error types by a SHA-256 hash of the stacktrace (without request data)
+- Hiding and showing of error types; a hidden type hides all its occurrences
+- ILIAS 9 data table with sorting, pagination and column selection; filter for severity, error code, full text and hidden errors
+- Detail view with the complete content of the error file, optionally masked, and "Copy Original" / "Copy Safe for Sharing"
+- Statistics: errors per time range, top error files, recent critical errors
+- Retention period and maximum number of records
 
-### Error Type Management
-- **Intelligent deduplication** using SHA-256 stacktrace hashing
-- **Hide/show error types** to focus on relevant issues
-- **Occurrence counting** shows how often each error type has occurred
-- **First/last seen timestamps** for each unique error type
-- **Admin notes** to document known issues or fixes
+## Requirements
 
-### Advanced Analysis Interface
-- **Modern ILIAS UI table** with sorting, pagination, and comprehensive filtering
-- **Multi-criteria filters**: Severity levels, date ranges, error codes, full-text search
-- **Detailed error views** with complete stacktraces and request context
-- **Clickable error codes** for quick access to detailed information
-- **Customizable table columns** (Level and Message columns can be hidden)
-
-### Data Management
-- **Rolling window retention** with automatic cleanup of old entries
-- **Configurable data limits** with oldest-first deletion when limits are reached
-- **Sensitive data masking** automatically sanitizes passwords, tokens, and cookies
-- **Export capabilities** for CSV and JSON formats supporting filtered data
-
-### Automated Operations
-- **Cron job integration** for scheduled, unattended imports
-- **ILIAS Cron Manager** compatibility with flexible scheduling
-- **Background processing** without requiring user intervention
-- **Status monitoring** and comprehensive error reporting
-
-### Security & Privacy
-- **Administrator-only access** with full RBAC integration
-- **Automatic data sanitization** of sensitive information
-- **CSRF protection** for all plugin operations
-- **Secure file access** with proper permission validation
-
-## System Requirements
-
-- **ILIAS Version:** 9.0 - 9.999
-- **PHP Version:** 8.0+ with `declare(strict_types=1)` support
-- **Database:** MySQL/MariaDB (uses ILIAS database abstraction)
-- **Web Server:** Apache/Nginx with read access to ILIAS error log directory
-- **Permissions:** System administrator privileges required for plugin usage
+- ILIAS 9.0 – 9.x
+- PHP 8.1 or higher with `json` and `mbstring`
+- Read access of the web server user (and of the cron user) to the ILIAS error log directory
 
 ## Installation
 
-### Step 1: Download and Extract
-```bash
-# Navigate to ILIAS plugin directory
-cd /path/to/ilias/Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/
+1. Copy the plugin to
 
-# Clone or extract the plugin
-git clone https://github.com/cce-uzk/IssueAnalysis.git
-# OR extract from archive to: IssueAnalysis/
-```
+   ```
+   Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis/
+   ```
 
-### Step 2: Install via ILIAS Administration
-1. Navigate to **Administration → Plugins** in your ILIAS installation
-2. Locate the **IssueAnalysis** plugin in the list
-3. Click **Install** to create database tables and register components
-4. Click **Activate** to enable the plugin
-5. Database schema and cron job registration will be handled automatically
+   e.g. with `git clone https://github.com/cce-uzk/IssueAnalysis.git IssueAnalysis`.
+2. In the ILIAS root directory run `composer du` so that the ILIAS class map contains the plugin classes.
+3. Administration → Extending ILIAS → Plugins: install and activate **IssueAnalysis**. The database tables are created by `sql/dbupdate.php`.
+4. Make sure the error log directory is configured (see below). The menu entry **Issue Analysis** appears in the Administration menu.
 
-### Step 3: Verify Installation
-- Confirm **Administration** menu shows "Fehleranalyse" entry
-- Check **Administration → Cron Jobs** for "IssueAnalysis Log Import" job
-- Verify plugin appears as active in **Administration → Plugins**
+## Updating
 
-## Configuration
+1. Replace the plugin directory with the new version.
+2. Run `composer du` in the ILIAS root directory.
+3. Administration → Extending ILIAS → Plugins: **Update** IssueAnalysis to run the database steps.
 
-### Step 1: Error Log Directory Setup
+## Configuration (administrators)
 
-Before using the plugin, ensure ILIAS error logging is properly configured:
+**Error log directory.** The plugin reads the directory configured in Administration → System Settings and Maintenance → Logging → Error Logging (`error_path` in `ilias.ini.php`). The path is never configured in the plugin.
 
-1. Navigate to **Administration → System Settings → Logging → Error Logging**
-2. Set the "Error Log Directory" path to a directory accessible by the web server
-3. Ensure the web server user has read permissions on the directory and log files
-4. Verify that ILIAS is actively writing error logs to this location
+**Plugin settings** (Administration → Extending ILIAS → Plugins → IssueAnalysis → Configure):
 
-### Step 2: Plugin Settings
+| Setting | Default | Description |
+|---|---|---|
+| Retention (days) | 30 | Entries older than this are deleted at the next import and not imported at all. `0` disables the deletion by age. Reducing the value deletes older entries immediately. |
+| Max. records | 10000 | The oldest entries above this number are deleted at the next import. `0` disables the limit. |
+| Mask sensitive data | on | Masks paths, host names, IPv4/IPv6 addresses, e-mail addresses, URLs, client ID, session IDs and the values of sensitive keys (passwords, tokens, cookies, session values such as the user ID) in the detail view. |
+| Time limit per import (s) | 120 | A run stops after this time; the next run continues. |
+| Entries per import | 1000 | A run stops after this number of imported files. |
 
-Access plugin settings via **Administration → Fehleranalyse → Settings**:
-
-#### Data Retention Configuration
-- **Retention Period (Days)**: Automatically delete entries older than the specified number of days
-  - `0` = Retention disabled (entries are never automatically deleted)
-  - Recommended: 30-90 days for typical installations
-- **Maximum Records**: Total database limit with rolling window cleanup
-  - `0` = Unlimited storage (not recommended for production)
-  - When limit is reached, oldest entries are automatically removed
-
-#### Data Security Settings
-- **Mask Sensitive Data**: Automatically sanitize sensitive information in error logs
-  - **Recommended: Enabled** to protect passwords, tokens, cookies, and personal data
-  - Masks data while preserving error analysis capabilities
-
-#### Import Performance Settings
-- **Time Limit per Import**: Maximum execution time for single import operation
-  - Default: 120 seconds
-  - Adjust based on server performance and log file sizes
-- **Entries Limit per Import**: Maximum number of entries processed per import run
-  - Default: 1000 entries
-  - Prevents memory exhaustion on large log files
-
-#### Cron Job Information
-The settings page displays information about the automated import cron job available in **Administration → Cron Jobs**.
+**Cron job.** Administration → System Settings and Maintenance → Cron Jobs → **IssueAnalysis Log Import** (`xial_import`). The job is inactive by default; the default schedule is every 30 minutes.
 
 ## Usage
 
-### Manual Error Log Import
+- **Error List**: "Import Now" imports new error files and reports the number of imported and skipped files. "Clear All Data" deletes all imported data (the error files are kept). The row actions open the detail view or hide/show the error type of the row.
+- **Filter**: severity, error code, full text (message, file, code) and "Hidden Errors" (hidden types are excluded by default).
+- **Detail view**: error code, time, severity, file and line, whether the original file is still available, and the complete content of the file. If the file was deleted, the stored stacktrace of the error type is shown instead.
+- **Statistics**: choose a time range (today, yesterday, last week, last month, last 3 months).
 
-For immediate analysis of recent errors:
+## Permissions
 
-1. Navigate to **Administration → Fehleranalyse**
-2. Click the **"Import Now"** button in the main interface
-3. Review the import results summary showing:
-   - Number of new entries imported
-   - Number of entries skipped (duplicates)
-   - Processing time and performance metrics
-4. New entries will immediately appear in the error list table
+- All views and actions require read permission on the system folder (Administration). The check is done in the controller for every request; anonymous users are always rejected.
+- The menu entry is only shown to users with this permission.
+- Actions that change data ("Import Now", "Clear All Data") are protected by one-time tokens against repeated and forged requests; the data table actions use the ILIAS URL builder.
 
-### Error Analysis Interface
+## Data protection and data storage
 
-#### Filtering and Search
-The plugin provides comprehensive filtering options:
+**Stored in the ILIAS database**
+- Per error file: error code, time, severity, first line of the message, file, line and stacktrace hash
+- Per error type: the stacktrace without request data (not masked), occurrences, first and last occurrence, and for hidden types the user ID of the administrator
+- Read position of the imported files
 
-- **Severity Filter**: Filter by error levels (ERROR, WARNING, NOTICE, FATAL_ERROR, PARSE_ERROR)
-- **Date Range**: Specify start and end dates for temporal analysis
-- **Error Code Search**: Filter by specific error codes or patterns
-- **Full-Text Search**: Search across error messages, file paths, and error codes
-- **Combined Filters**: Use multiple filters simultaneously for precise analysis
+**Not stored**: the request data (GET/POST, cookies, session) of the error files. It is read from the original file for the detail view only.
 
-#### Viewing Error Details
-- **Quick View**: Error codes in the table are clickable for immediate access to details
-- **Detail View**: Comprehensive error information including:
-  - Complete error messages and descriptions
-  - Full stack traces with collapsible frames
-  - Request context and sanitized request data
-  - User information and system state at time of error
-- **Copy Functions**: Copy original or sanitized versions of error data for sharing
+The original error files are written by ILIAS and are not changed or deleted by the plugin. No data is sent to external services.
 
-#### Table Management
-- **Column Customization**: Show/hide Level and Message columns via table controls
-- **Sorting**: Click any column header to sort data (timestamp, severity, file, etc.)
-- **Pagination**: Navigate through large result sets with configurable page sizes
-- **Export Options**: Export filtered data to CSV or JSON formats
+Details on stored, presented, deleted and exported data are listed in [PRIVACY.md](PRIVACY.md).
 
-#### Error Type Management
-- **Hide Error Types**: Click "Hide" on any error to hide all occurrences of that error type
-- **Show Hidden**: Toggle "Show hidden" filter to view previously hidden errors
-- **Unhide**: Re-enable hidden error types from the list
-- **Bulk Management**: Hiding one error automatically hides all identical errors (same stacktrace)
+## How it works
 
-### Automated Import (Cron Job)
+### Import
 
-#### Setting Up Automated Import
-1. Navigate to **Administration → Cron Jobs** in ILIAS
-2. Locate **"IssueAnalysis Log Import"** (Job ID: `xial_import`)
-3. **Activate** the cron job
-4. Configure the **schedule** (default: every 30 minutes)
-5. Optionally test the job using the **"Start Now"** button
+1. The importer reads the error log directory and skips files whose error code (file name without `.log`) has already been imported.
+2. For each new file it extracts the first line as message, the first `file.php:line` reference, and the stacktrace part before the first request data section (`-- GET Data --`, `-- POST Data --`, `-- Files --`, `-- Cookies --`).
+3. The SHA-256 hash of this stacktrace part identifies the error type. The type is inserted into `xial_error` or its counter and last occurrence are updated; the single error is inserted into `xial_log`.
+4. After the run, entries outside the retention period or above the maximum number of records are deleted, as well as error types without entries.
 
-#### Monitoring Automated Import
-- **Status Monitoring**: Check job status and last execution time in Cron Jobs administration
-- **Result Tracking**: Review import statistics and any errors in the job history
-- **Log Monitoring**: Plugin operations are logged to ILIAS system logs with component "xial"
+### Database
 
-## Data Management
+| Table | Content |
+|---|---|
+| `xial_log` | One row per error file (error code, time, severity, message, file, line, stacktrace hash) |
+| `xial_error` | One row per error type (stacktrace hash as primary key, stacktrace, counters, hidden flag) |
+| `xial_source` | Import tracking per file (path, inode, offset) |
 
-### Database Architecture
+The list and the statistics only read these tables. The detail view reads one error file.
 
-The plugin uses a three-table architecture optimized for performance, deduplication, and scalability:
-
-- **`xial_log`**: Individual error log entries containing timestamp, severity, message (truncated), file path, user information, error codes, and a reference to the error type via `stacktrace_hash`
-- **`xial_error`**: Unique error types identified by stacktrace hash. Contains full error message, occurrence count, first/last seen timestamps, and ignore status for hiding known issues
-- **`xial_source`**: File tracking system for incremental import functionality (prevents duplicate processing)
-
-### Hash-Based Deduplication
-
-The plugin uses SHA-256 hashing of stacktraces to identify identical errors:
-
-- **Same stacktrace = same error type**: Errors with identical stacktraces are grouped together
-- **Occurrence tracking**: Each error type tracks how many times it has occurred
-- **Storage efficiency**: Full stacktrace stored once per error type, not per occurrence
-- **Quick filtering**: Hide entire error types with a single click
-
-### Lazy Loading Strategy
-
-To minimize database storage and improve performance, detailed error content is loaded on-demand:
-
-- **Stacktrace loading**: Full stacktrace is loaded from the original error log file when viewing details
-- **Fallback mechanism**: If the original file is deleted/rotated, the stacktrace from `xial_error` is used
-- **Request data**: Original request data (GET, POST, cookies) only available from original files
-- **Storage savings**: ~98% reduction in database storage compared to storing full content
-
-### Automated Data Retention
-
-#### Time-Based Retention
-- Entries older than the configured retention period are automatically deleted
-- Cleanup runs during import operations and when retention settings are modified
-- Retention can be disabled by setting the period to 0 (not recommended for production)
-
-#### Count-Based Limits
-- When the maximum record limit is reached, oldest entries are automatically removed
-- Implements a rolling window approach to maintain recent error history
-- Protects against database growth in high-error environments
-
-#### Manual Data Management
-- **Settings Changes**: Modifying retention settings triggers immediate cleanup of affected data
-- **Source Tracking Reset**: Administrators can reset import tracking to allow re-processing of log files
-- **Selective Cleanup**: Retention cleanup respects filter settings and only processes eligible entries
-
-### Data Export Capabilities
-
-The plugin provides flexible export options for further analysis:
-
-- **CSV Export**: Structured data export suitable for spreadsheet analysis and reporting
-- **JSON Export**: Machine-readable format for programmatic processing and integration
-- **Filtered Exports**: Export functionality respects active filters, allowing targeted data extraction
-- **Sanitized Exports**: All exports automatically apply data sanitization rules for safe sharing
-
-## Security Features
-
-### Access Control and Permissions
-- **Administrator-Only Access**: Plugin functionality is restricted to users with system administration privileges
-- **RBAC Integration**: Full integration with ILIAS Role-Based Access Control system
-- **Session Validation**: All operations require valid ILIAS authentication and active sessions
-- **Permission Verification**: Each request validates user permissions before processing
-
-### Comprehensive Data Sanitization
-
-The plugin automatically sanitizes sensitive information in error logs:
-
-#### Credential Protection
-- **Passwords**: Any field containing "password", "pwd", "pass", or similar patterns
-- **API Tokens**: Session tokens, authentication tokens, and API keys
-- **Cookies**: All cookie values are masked to prevent session hijacking
-- **Private Keys**: SSH keys, certificates, and cryptographic material
-
-#### Privacy Protection
-- **IP Address Masking**: Last octet of IP addresses is masked for privacy compliance
-- **User Agent Hashing**: User agent strings are hashed for anonymization while preserving uniqueness
-- **Personal Data**: Any detected personal information is automatically sanitized
-
-#### Data Integrity
-- **Selective Masking**: Sanitization preserves error analysis capabilities while protecting sensitive data
-- **Reversible Masking**: Original data structure is maintained for debugging purposes
-- **Export Safety**: All export functions apply sanitization rules automatically
-
-### Security Compliance
-- **CSRF Protection**: All plugin operations include CSRF token validation to prevent cross-site request forgery
-- **Input Validation**: All user inputs are validated and sanitized before processing
-- **Secure File Access**: File system operations include proper permission checks and path validation
-- **Audit Logging**: All administrative actions are logged for security auditing
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-#### Import Problems
-
-**"No entries imported"**
-- Verify error log directory path in **Administration → System Settings → Logging**
-- Ensure web server user has read permissions on log directory and files
-- Check that log files contain parseable error entries in expected format
-- Review plugin import limits (time/line limits) in plugin settings
-- Confirm ILIAS is actively writing to the configured error log directory
-
-**"Import stops prematurely"**
-- Increase time limit in plugin settings if import times out
-- Increase memory limit in PHP configuration for large log files
-- Check for corrupted log files or unexpected format changes
-- Review import line limits and adjust if necessary
-
-#### Cron Job Issues
-
-**"Cron job not visible in administration"**
-- Verify plugin is properly activated in **Administration → Plugins**
-- Confirm plugin implements `ilCronJobProvider` interface correctly
-- Try deactivating and reactivating the plugin to re-register cron job
-- Check ILIAS logs for plugin initialization errors
-
-**"Cron job fails to execute"**
-- Verify error log directory permissions for background processes
-- Check PHP time limits and memory limits for cron execution
-- Review cron job logs in **Administration → Cron Jobs** for specific error messages
-- Ensure ILIAS cron job mechanism is properly configured on the server
-
-#### Permission and Access Issues
-
-**"Permission denied errors"**
-- Confirm web server user can read error log directory and files
-- Verify file permissions are correctly set (typically 644 for files, 755 for directories)
-- Check that ILIAS error logging is enabled and properly configured
-- Ensure administrator privileges are properly assigned to users
-
-### Debugging and Monitoring
-
-#### Plugin Log Files
-All plugin operations are logged to ILIAS system logs with component identifier "xial":
-
-```bash
-# Monitor plugin operations in real-time
-tail -f /path/to/ilias/logs/ilias.log | grep xial
-
-# Search for specific error patterns
-grep "xial.*ERROR" /path/to/ilias/logs/ilias.log
-```
-
-#### Import Statistics and Monitoring
-Each import operation provides detailed statistics:
-
-- **Import Results**: Number of new entries imported and entries skipped
-- **Performance Metrics**: Processing time and memory usage
-- **Error Details**: Specific errors and warnings encountered during import
-- **File Status**: Information about processed files and tracking status
-
-#### System Health Checks
-- **Database Performance**: Monitor query performance on large error datasets
-- **Disk Space**: Ensure adequate space for log file processing and database growth
-- **Memory Usage**: Monitor PHP memory usage during large imports
-- **Log Rotation**: Verify log rotation doesn't interfere with import tracking
-
-## Technical Documentation
-
-### Architecture Overview
-
-The IssueAnalysis plugin follows modern ILIAS 9 design patterns and best practices:
-
-- **UIComponent UserInterfaceHook Plugin**: Integrates seamlessly into ILIAS administration interface
-- **Modern ILIAS 9 Framework**: Utilizes current UI components and design patterns
-- **Repository Pattern**: Clean separation of data access logic from business logic
-- **Service-Oriented Design**: Modular architecture with dedicated service classes
-- **Dependency Injection**: Uses ILIAS DIC (Dependency Injection Container) throughout
-
-### Component Structure
+### Structure
 
 ```
 IssueAnalysis/
-├── plugin.php                                      # Plugin definition and metadata
-├── composer.json                                   # PSR-4 autoloading configuration
-├── vendor/                                         # Composer dependencies (committed)
+├── plugin.php                     Plugin metadata
 ├── classes/
-│   ├── bootstrap.php                              # Composer autoloader initialization
-│   ├── class.ilIssueAnalysisPlugin.php            # Main plugin class with cron provider
-│   ├── class.ilIssueAnalysisGUI.php               # Primary interface controller
-│   ├── class.ilIssueAnalysisAdminGUI.php          # Administration interface
-│   ├── class.ilIssueAnalysisTableGUI.php          # Error list table component
-│   ├── class.ilIssueAnalysisRepo.php              # Database repository layer
-│   ├── class.ilIssueAnalysisImporter.php          # Log parsing and import engine
-│   ├── class.ilIssueAnalysisSettings.php          # Configuration management
-│   ├── class.ilIssueAnalysisConfigGUI.php         # Settings interface
-│   ├── class.ilIssueAnalysisSanitizer.php         # Data sanitization service
-│   ├── class.ilIssueAnalysisUIHookGUI.php         # UI hook implementation
-│   ├── MainBar/
-│   │   └── ilIssueAnalysisMainBarProvider.php     # ILIAS GlobalScreen menu integration
-│   └── Cron/
-│       ├── class.ilIssueAnalysisImportJob.php     # Automated import cron job
-│       └── class.ilIssueAnalysisCronJobFactory.php # Cron job factory pattern
-├── src/
-│   ├── Service/
-│   │   ├── StringTruncator.php                    # Safe string truncation for DB fields
-│   │   └── DoubleSubmissionGuard.php              # CSRF/double-submit protection
-│   └── Exception/
-│       ├── IssueAnalysisException.php             # Base exception class
-│       └── ImportException.php                    # Import-specific exceptions
-├── sql/
-│   └── dbupdate.php                                # Database schema and migrations
-├── lang/
-│   ├── ilias_de.lang                              # German language file
-│   └── ilias_en.lang                              # English language file
-└── templates/
-    └── images/
-        └── icon_issueanalysis.svg                 # Plugin icon (SVG format)
+│   ├── class.ilIssueAnalysisPlugin.php        Plugin, cron provider, uninstall
+│   ├── class.ilIssueAnalysisAdminGUI.php      Entry point below ilAdministrationGUI
+│   ├── class.ilIssueAnalysisGUI.php           List, detail view, statistics, actions
+│   ├── class.ilIssueAnalysisTableGUI.php      Data table and data retrieval
+│   ├── class.ilIssueAnalysisConfigGUI.php     Plugin settings
+│   ├── class.ilIssueAnalysisImporter.php      Import of the error files
+│   ├── class.ilIssueAnalysisRepo.php          Database access
+│   ├── class.ilIssueAnalysisSanitizer.php     Masking of sensitive data
+│   ├── class.ilIssueAnalysisSettings.php      Settings (ilSetting "xial")
+│   ├── Cron/                                  Cron job
+│   └── MainBar/                               Menu entry
+├── src/                           Namespaced services and exceptions (ILIAS\Plugin\xial)
+├── sql/dbupdate.php               Database steps
+├── templates/default/             Template for the content of an error file
+├── css/xial.css                   Styles of the detail view
+├── js/xial.js                     Copy to clipboard in the detail view
+├── lang/                          German and English language files
+└── tests/                         PHPUnit tests
 ```
 
-### Database Schema
+## Tests and code style
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ xial_error (Unique Error Types)                             │
-├─────────────────────────────────────────────────────────────┤
-│ stacktrace_hash (PK)  │ SHA-256 hash of stacktrace          │
-│ message               │ Full error message (CLOB)           │
-│ file, line, severity  │ Error location and level            │
-│ first_seen, last_seen │ Temporal tracking                   │
-│ occurrence_count      │ Number of occurrences               │
-│ ignored               │ Hide flag (0/1)                     │
-│ ignored_at, ignored_by│ Admin who hid the error             │
-│ note                  │ Admin notes                         │
-└─────────────────────────────────────────────────────────────┘
-                              │ 1:N
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│ xial_log (Individual Error Occurrences)                     │
-├─────────────────────────────────────────────────────────────┤
-│ id (PK)               │ Auto-increment ID                   │
-│ stacktrace_hash (FK)  │ Reference to error type             │
-│ code                  │ Original error code (e.g. 00037_8216)│
-│ timestamp             │ When the error occurred             │
-│ severity, message     │ Error level and truncated message   │
-│ file, line            │ Error location                      │
-│ user_id, session_id   │ User context                        │
-│ ip_address            │ Client IP (masked)                  │
-│ context               │ Additional context                  │
-│ analyzed              │ Analysis flag                       │
-└─────────────────────────────────────────────────────────────┘
+Unit tests (PHPUnit 9.5, as used by ILIAS 9) cover the error file parser and the stacktrace hash, the sanitizer, the settings, the double submission guard and the string truncation. They run without an ILIAS installation:
 
-┌─────────────────────────────────────────────────────────────┐
-│ xial_source (File Tracking)                                 │
-├─────────────────────────────────────────────────────────────┤
-│ file_path (PK)        │ Path to error log file              │
-│ file_inode            │ Inode for rotation detection        │
-│ last_offset           │ Last read position                  │
-│ last_check            │ Last import timestamp               │
-└─────────────────────────────────────────────────────────────┘
+```bash
+cd Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis
+<path to>/phpunit -c phpunit.xml
 ```
 
-### Performance Optimizations
+The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
 
-#### Import Performance
-- **Incremental Processing**: Only processes new log entries using file tracking system
-- **Chunked Processing**: Configurable limits prevent memory exhaustion and timeout issues
-- **Parallel-Safe Design**: Multiple import processes can run simultaneously without conflicts
-- **Retention-Aware Import**: Skips entries outside retention window to improve efficiency
+```bash
+libs/composer/vendor/bin/php-cs-fixer fix --dry-run --diff --config=./CI/PHP-CS-Fixer/code-format.php_cs <plugin directory>
+node_modules/.bin/eslint -c .eslintrc.json --no-eslintrc <plugin directory>/js/xial.js
+```
 
-#### Database Performance
-- **Optimized Schema**: Indexed columns for common query patterns (timestamp, severity, stacktrace_hash)
-- **Hash-Based Deduplication**: Identical errors stored once, referenced by hash
-- **Lazy Loading**: Full stacktrace and request data loaded from original files on demand
-- **Minimal Storage**: Only essential metadata stored in database (~2KB per entry vs ~100KB without optimization)
-- **Query Optimization**: Efficient filtering and pagination queries with JOIN to error types
-- **Automatic Cleanup**: Retention system cleans up both log entries and orphaned error types
+## Troubleshooting
 
-#### Memory Management
-- **Stream Processing**: Large log files processed in chunks rather than loaded entirely
-- **Resource Cleanup**: Proper resource disposal in all processing loops
-- **Memory Limits**: Configurable limits prevent excessive memory usage
+| Symptom | Cause and solution |
+|---|---|
+| "Import completed: No new entries found" although errors occurred | Check the error log directory in the Logging settings and the read permissions of the web server user |
+| Import stops before all files are imported | Time or entry limit reached; run the import again or raise the limits |
+| Cron job is missing in the cron job administration | Check that the plugin is active; deactivate and activate it again |
+| Cron job imports nothing | The cron user needs read access to the error log directory |
+| Original file "No longer available (DB data only)" in the detail view | The error file was deleted or rotated; the stored stacktrace of the error type is shown |
+| Class not found after an update | Run `composer du` in the ILIAS root directory |
 
-## Development
+Plugin messages are written to the ILIAS log with the component `xial`.
 
-### Development Requirements
+## License and contact
 
-#### System Requirements
-- **ILIAS Version**: 9.0 - 9.999
-- **PHP Version**: 8.0+ with strict types support (`declare(strict_types=1)`)
-- **Database**: MySQL 8.0+ or MariaDB 10.3+ (uses ILIAS database abstraction layer)
-- **Web Server**: Apache 2.4+ or Nginx with proper PHP-FPM configuration
+GNU General Public License v3.0, the same license as ILIAS. See [LICENSE](LICENSE).
 
-#### Development Environment
-- **IDE Support**: Modern IDE with PHP 8+ support and ILIAS code completion
-- **Debugging**: Xdebug configuration for development and debugging
-- **Testing**: Access to ILIAS 9 test installation for plugin development
-
-### Code Standards and Conventions
-
-#### ILIAS Compliance
-- **ILIAS Coding Standards**: Strict adherence to ILIAS plugin development guidelines
-- **UI Framework**: Exclusive use of ILIAS 9 UI components (no legacy UI elements)
-- **Naming Conventions**: Follows ILIAS class and method naming patterns
-- **Database Layer**: Uses ILIAS database abstraction for all database operations
-
-#### Modern PHP Practices
-- **Strict Typing**: All files use `declare(strict_types=1)`
-- **Constructor Property Promotion**: Utilizes PHP 8+ constructor features where appropriate
-- **Type Declarations**: Complete type hints for all method parameters and return values
-- **PSR Compliance**: Follows PSR-4 autoloading and PSR-3 logging standards
-
-### Extension and Customization Points
-
-The plugin architecture supports various extension scenarios:
-
-#### Import System Extensions
-- **Custom Log Formats**: Extend `ilIssueAnalysisImporter` to support additional log formats
-- **Additional Parsers**: Add support for different error log structures
-- **Enhanced Filtering**: Implement additional import filtering criteria
-
-#### Data Processing Extensions
-- **Custom Sanitization Rules**: Extend `ilIssueAnalysisSanitizer` with organization-specific sanitization
-- **Additional Export Formats**: Add new export formats beyond CSV and JSON
-- **Custom Data Transformations**: Implement additional data processing pipelines
-
-#### UI and Interface Extensions
-- **Additional Views**: Create custom analysis views and dashboards
-- **Enhanced Filtering**: Add domain-specific filter options
-- **Custom Reports**: Implement specialized reporting functionality
-
-#### Integration Extensions
-- **Additional Cron Jobs**: Use the cron job factory pattern for custom automated tasks
-- **External System Integration**: Add connectors for external monitoring systems
-- **API Extensions**: Implement additional API endpoints for programmatic access
-
-### Plugin Architecture Benefits
-
-#### Maintainability
-- **Modular Design**: Clear separation of concerns across service classes
-- **Repository Pattern**: Database operations isolated in dedicated repository classes
-- **Dependency Injection**: Facilitates testing and component replacement
-
-#### Scalability
-- **Performance Optimization**: Built-in performance monitoring and optimization
-- **Resource Management**: Efficient memory and processing resource utilization
-- **Concurrent Processing**: Support for parallel import operations
-
-#### Security
-- **Input Validation**: Comprehensive validation of all user inputs
-- **Permission Checks**: Multi-layer permission validation
-- **Data Sanitization**: Automatic sanitization of sensitive information
-
-## Support and Community
-
-### Documentation Resources
-- **Comprehensive README**: This document provides complete usage and development guidance
-- **Inline Documentation**: Extensive code comments and PHPDoc annotations
-- **Technical Architecture**: Detailed component and interaction documentation
-
-### Community Support
-- **ILIAS Community Forums**: Standard ILIAS plugin support channels and discussions
-- **GitHub Issues**: Issue tracking and feature requests via repository issue system
-- **Developer Documentation**: Additional technical resources for plugin developers
-
-### Issue Reporting and Contributions
-- **Bug Reports**: Submit detailed bug reports with reproduction steps and environment information
-- **Feature Requests**: Propose new features with clear use cases and implementation considerations
-- **Code Contributions**: Follow standard ILIAS plugin contribution guidelines for code submissions
-
-## License and Attribution
-
-This plugin is released under the **GNU General Public License v3 (GPL v3)**, maintaining compatibility with ILIAS core licensing.
-
-### Plugin Metadata
-- **Plugin ID**: `xial`
-- **Version**: 1.2.0
-- **Compatibility**: ILIAS 9.0 - 9.999
-- **Maintained by**: University of Cologne Computing Centre
-- **Repository**: https://github.com/cce-uzk/IssueAnalysis
-
----
-
-*For additional technical support or specific implementation questions, please refer to the ILIAS community forums or submit issues through the GitHub repository.*
+Developed by the CompetenceCenter E-Learning, University of Cologne.
+Issues and questions: [GitHub issues](https://github.com/cce-uzk/IssueAnalysis/issues) or nadimo.staszak@uni-koeln.de.

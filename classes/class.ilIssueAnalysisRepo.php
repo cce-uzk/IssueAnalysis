@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -67,6 +80,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Insert error log entry
+     *
+     * @param array<string, mixed> $data
      */
     public function insertLogEntry(array $data): int
     {
@@ -104,6 +119,10 @@ class ilIssueAnalysisRepo
 
     /**
      * Get log entries with optional filtering and sorting
+     *
+     * @param array<string, mixed> $filter
+     * @param array<string, string> $order
+     * @return list<array<string, mixed>>
      */
     public function getLogEntries(array $filter = [], int $offset = 0, int $limit = 50, array $order = [], bool $showIgnored = false): array
     {
@@ -208,6 +227,8 @@ class ilIssueAnalysisRepo
     /**
      * Get single log entry by ID
      * Note: Stacktrace is loaded via lazy-loading from original file (see getLogEntryWithFullContent)
+     *
+     * @return array<string, mixed>|null
      */
     public function getLogEntry(int $id): ?array
     {
@@ -226,6 +247,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Count total log entries with optional filtering
+     *
+     * @param array<string, mixed> $filter
      */
     public function countLogEntries(array $filter = [], bool $showIgnored = false): int
     {
@@ -298,6 +321,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Mark entries as analyzed
+     *
+     * @param int[] $ids
      */
     public function markAsAnalyzed(array $ids): void
     {
@@ -367,6 +392,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Delete specific log entries
+     *
+     * @param int[] $ids
      */
     public function deleteLogEntries(array $ids): void
     {
@@ -401,6 +428,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get comprehensive error analysis statistics
+     *
+     * @return array<string, array<string, mixed>>
      */
     public function getStatistics(string $timeRange = 'last_week'): array
     {
@@ -414,6 +443,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get basic overview statistics
+     *
+     * @return array<string, mixed>
      */
     public function getOverviewStats(): array
     {
@@ -462,6 +493,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get error statistics by time ranges with flexible periods
+     *
+     * @return array<string, mixed>
      */
     public function getTimerangeStats(string $timeRange = 'last_week'): array
     {
@@ -503,6 +536,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get hourly statistics for today or yesterday
+     *
+     * @return array<int, array{total: int, by_severity: array<string, int>}> Per hour of the day
      */
     private function getHourlyStats(string $day = 'today'): array
     {
@@ -518,12 +553,12 @@ class ilIssueAnalysisRepo
 
         $stats = [];
         while ($row = $this->db->fetchAssoc($result)) {
-            $hour = (int)$row['hour'];
+            $hour = (int) $row['hour'];
             if (!isset($stats[$hour])) {
                 $stats[$hour] = ['total' => 0, 'by_severity' => []];
             }
-            $stats[$hour]['total'] += (int)$row['cnt'];
-            $stats[$hour]['by_severity'][$row['severity']] = (int)$row['cnt'];
+            $stats[$hour]['total'] += (int) $row['cnt'];
+            $stats[$hour]['by_severity'][$row['severity']] = (int) $row['cnt'];
         }
 
         return $stats;
@@ -531,6 +566,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get daily statistics for specified number of days
+     *
+     * @return array<string, array<string, mixed>>
      */
     private function getDailyStats(int $days): array
     {
@@ -548,8 +585,8 @@ class ilIssueAnalysisRepo
             if (!isset($stats[$date])) {
                 $stats[$date] = ['total' => 0, 'by_severity' => []];
             }
-            $stats[$date]['total'] += (int)$row['cnt'];
-            $stats[$date]['by_severity'][$row['severity']] = (int)$row['cnt'];
+            $stats[$date]['total'] += (int) $row['cnt'];
+            $stats[$date]['by_severity'][$row['severity']] = (int) $row['cnt'];
         }
 
         return $stats;
@@ -557,6 +594,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get weekly statistics for specified number of weeks
+     *
+     * @return array<string, array<string, mixed>>
      */
     private function getWeeklyStats(int $weeks): array
     {
@@ -570,12 +609,12 @@ class ilIssueAnalysisRepo
 
         $stats = [];
         while ($row = $this->db->fetchAssoc($result)) {
-            $key = $row['year'] . '-W' . str_pad((string)$row['week'], 2, '0', STR_PAD_LEFT);
+            $key = $row['year'] . '-W' . str_pad((string) $row['week'], 2, '0', STR_PAD_LEFT);
             if (!isset($stats[$key])) {
                 $stats[$key] = ['total' => 0, 'by_severity' => []];
             }
-            $stats[$key]['total'] += (int)$row['cnt'];
-            $stats[$key]['by_severity'][$row['severity']] = (int)$row['cnt'];
+            $stats[$key]['total'] += (int) $row['cnt'];
+            $stats[$key]['by_severity'][$row['severity']] = (int) $row['cnt'];
         }
 
         return $stats;
@@ -583,6 +622,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get chart data for hourly view
+     *
+     * @return array<string, int>
      */
     private function getHourlyChartData(string $day = 'today'): array
     {
@@ -599,12 +640,12 @@ class ilIssueAnalysisRepo
         $data = [];
         // Initialize all 24 hours with 0
         for ($i = 0; $i < 24; $i++) {
-            $data[str_pad((string)$i, 2, '0', STR_PAD_LEFT) . ':00'] = 0;
+            $data[str_pad((string) $i, 2, '0', STR_PAD_LEFT) . ':00'] = 0;
         }
 
         while ($row = $this->db->fetchAssoc($result)) {
-            $hour = str_pad((string)$row['hour'], 2, '0', STR_PAD_LEFT) . ':00';
-            $data[$hour] = (int)$row['cnt'];
+            $hour = str_pad((string) $row['hour'], 2, '0', STR_PAD_LEFT) . ':00';
+            $data[$hour] = (int) $row['cnt'];
         }
 
         return $data;
@@ -612,6 +653,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get chart data for daily view
+     *
+     * @return array<string, int>
      */
     private function getDailyChartData(int $days): array
     {
@@ -632,7 +675,7 @@ class ilIssueAnalysisRepo
 
         // Fill in actual data
         while ($row = $this->db->fetchAssoc($result)) {
-            $data[$row['date']] = (int)$row['cnt'];
+            $data[$row['date']] = (int) $row['cnt'];
         }
 
         return $data;
@@ -640,6 +683,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get chart data for weekly view
+     *
+     * @return array<string, int>
      */
     private function getWeeklyChartData(int $weeks): array
     {
@@ -653,8 +698,8 @@ class ilIssueAnalysisRepo
 
         $data = [];
         while ($row = $this->db->fetchAssoc($result)) {
-            $key = $row['year'] . '-W' . str_pad((string)$row['week'], 2, '0', STR_PAD_LEFT);
-            $data[$key] = (int)$row['cnt'];
+            $key = $row['year'] . '-W' . str_pad((string) $row['week'], 2, '0', STR_PAD_LEFT);
+            $data[$key] = (int) $row['cnt'];
         }
 
         return $data;
@@ -662,6 +707,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get error statistics by source files with time range
+     *
+     * @return array<string, mixed>
      */
     public function getSourceFileStats(string $timeRange = 'last_week'): array
     {
@@ -701,7 +748,7 @@ class ilIssueAnalysisRepo
         }
 
         // Sort by latest occurrence (most recent first), then by count
-        uasort($file_data, function($a, $b) {
+        uasort($file_data, function ($a, $b) {
             // First sort by latest timestamp (descending - newest first)
             if ($a['latest_timestamp'] !== $b['latest_timestamp']) {
                 return strcmp($b['latest_timestamp'], $a['latest_timestamp']);
@@ -712,7 +759,9 @@ class ilIssueAnalysisRepo
 
         $counter = 0;
         foreach ($file_data as $file => $data) {
-            if ($counter >= 10) break;
+            if ($counter >= 10) {
+                break;
+            }
 
             // Get unique messages for this file in the time range
             $messages_result = $this->db->queryF(
@@ -749,7 +798,9 @@ class ilIssueAnalysisRepo
         $chart_data = [];
         $counter = 0;
         foreach ($file_data as $file => $data) {
-            if ($counter >= 5) break;
+            if ($counter >= 5) {
+                break;
+            }
             $chart_data[basename($file)] = $data['total'];
             $counter++;
         }
@@ -780,7 +831,9 @@ class ilIssueAnalysisRepo
     }
 
     /**
-     * Get error pattern analysis (without random error codes)
+     * Recent critical errors and the severity distribution in the time range
+     *
+     * @return array<string, mixed>
      */
     public function getErrorPatternStats(string $timeRange = 'last_week'): array
     {
@@ -794,7 +847,7 @@ class ilIssueAnalysisRepo
 
         // Critical errors (fatal, parse errors in the selected time range)
         $result = $this->db->query(
-            "SELECT severity, message, file, timestamp, code
+            "SELECT id, severity, message, file, timestamp, code
              FROM xial_log
              WHERE severity IN ('fatal_error', 'parse_error')
              AND timestamp >= DATE_SUB(NOW(), INTERVAL $interval)
@@ -803,6 +856,7 @@ class ilIssueAnalysisRepo
         );
         while ($row = $this->db->fetchAssoc($result)) {
             $stats['critical_errors'][] = [
+                'id' => (int) $row['id'],
                 'severity' => $row['severity'],
                 'message' => substr($row['message'], 0, 100) . (strlen($row['message']) > 100 ? '...' : ''),
                 'file' => $row['file'],
@@ -860,6 +914,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get source file tracking info
+     *
+     * @return array<string, mixed>|null
      */
     public function getSourceTracking(string $filePath): ?array
     {
@@ -885,7 +941,7 @@ class ilIssueAnalysisRepo
         );
 
         $row = $this->db->fetchAssoc($result);
-        return (int)$row['cnt'] > 0;
+        return (int) $row['cnt'] > 0;
     }
 
     /**
@@ -909,6 +965,9 @@ class ilIssueAnalysisRepo
     /**
      * Export log entries to array for CSV/JSON export
      * Note: Stacktrace available via lazy-loading from xial_error.message or original file
+     *
+     * @param int[] $ids
+     * @return list<array<string, mixed>>
      */
     public function exportLogEntries(array $ids = []): array
     {
@@ -970,6 +1029,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get all ignored error types
+     *
+     * @return list<array<string, mixed>>
      */
     public function getIgnoredHashes(): array
     {
@@ -1007,6 +1068,8 @@ class ilIssueAnalysisRepo
 
     /**
      * Get full error content from original file (lazy-loading)
+     *
+     * @return array<string, mixed> Empty if the entry does not exist
      */
     public function getLogEntryWithFullContent(int $id, string $errorLogDir): array
     {
@@ -1017,8 +1080,10 @@ class ilIssueAnalysisRepo
         }
 
         // Try to load full content from original file
-        $errorCode = $entry['code'];
-        if ($errorCode) {
+        $errorCode = (string) $entry['code'];
+        $entry['file_available'] = false;
+        // Error codes are file names like "00037_8216"; never allow path components
+        if (preg_match('/^[A-Za-z0-9_-]+$/', $errorCode) === 1) {
             $filePath = rtrim($errorLogDir, '/') . '/' . $errorCode . '.log';
 
             if (file_exists($filePath) && is_readable($filePath)) {

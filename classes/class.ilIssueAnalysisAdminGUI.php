@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -14,7 +27,7 @@ require_once __DIR__ . '/bootstrap.php';
  */
 class ilIssueAnalysisAdminGUI extends ilObjectGUI
 {
-    private ilIssueAnalysisPlugin $plugin;
+    private ?ilIssueAnalysisPlugin $plugin;
 
     public function __construct()
     {
@@ -61,7 +74,6 @@ class ilIssueAnalysisAdminGUI extends ilObjectGUI
         $this->setAdministrationBreadcrumb();
 
         // Forward to main GUI
-        require_once __DIR__ . '/class.ilIssueAnalysisGUI.php';
         $gui = new ilIssueAnalysisGUI();
         $gui->executeCommand();
     }
@@ -116,6 +128,8 @@ class ilIssueAnalysisAdminGUI extends ilObjectGUI
 
     /**
      * Get administration menu entry data
+     *
+     * @return array<string, mixed>
      */
     public static function getAdminMenuEntry(): array
     {

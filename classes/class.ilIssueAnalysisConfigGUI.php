@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -15,7 +28,6 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
 {
     private ilCtrl $ctrl;
     private ilGlobalPageTemplate $tpl;
-    private ilLanguage $lng;
     private ilTabsGUI $tabs;
     private ilIssueAnalysisPlugin $plugin;
 
@@ -25,7 +37,6 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
 
         $this->ctrl = $DIC->ctrl();
         $this->tpl = $DIC->ui()->mainTemplate();
-        $this->lng = $DIC->language();
         $this->tabs = $DIC->tabs();
     }
 
@@ -34,7 +45,11 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
      */
     public function performCommand(string $cmd): void
     {
-        $this->plugin = $this->getPluginObject();
+        $plugin = $this->getPluginObject();
+        if (!$plugin instanceof ilIssueAnalysisPlugin) {
+            throw new LogicException('ilIssueAnalysisConfigGUI requires the IssueAnalysis plugin object');
+        }
+        $this->plugin = $plugin;
 
         switch ($cmd) {
             case 'configure':
@@ -58,7 +73,6 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
      */
     private function showSettings(): void
     {
-        require_once __DIR__ . '/class.ilIssueAnalysisSettings.php';
 
         // Set page title, description and icon
         $this->tpl->setTitle($this->plugin->txt('plugin_title'));
@@ -76,23 +90,48 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
         );
         $this->tabs->activateTab('settings');
 
-        // Create cron job information as simple HTML before form
-        $cron_info_text = sprintf(
-            $this->plugin->txt('settings_cron_info_text'),
-            $this->plugin->txt('cron_job_title'),
-            'xial_import'
+        $settings = new ilIssueAnalysisSettings();
+        $form = $this->buildSettingsForm($settings);
+
+        $this->tpl->setContent($this->renderCronInfo() . $form);
+    }
+
+    /**
+     * Info message box about the cron job, with a link to the cron job administration
+     */
+    private function renderCronInfo(): string
+    {
+        global $DIC;
+
+        $ui_factory = $DIC->ui()->factory();
+
+        $message_box = $ui_factory->messageBox()->info(
+            sprintf(
+                $this->plugin->txt('settings_cron_info_text'),
+                $this->plugin->txt('cron_job_title'),
+                ilIssueAnalysisImportJob::CRON_JOB_ID
+            )
         );
 
-        $cron_info_html = '<div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; margin-bottom: 20px;">' .
-                         '<h4 style="margin-top: 0;">' . $this->plugin->txt('settings_cron_info_title') . '</h4>' .
-                         '<p style="margin-bottom: 0;"><strong>ℹ️ ' . $cron_info_text . '</strong></p>' .
-                         '</div>';
+        // The link needs the ref_id of the system folder; the ref_id of the plugin
+        // administration is restored afterwards, so that later links of this page keep it
+        $query = $DIC->http()->wrapper()->query();
+        if ($query->has('ref_id')) {
+            $current_ref_id = $query->retrieve('ref_id', $DIC->refinery()->kindlyTo()->int());
 
-        // Create settings form using modern UI
-        $settings = new ilIssueAnalysisSettings();
-        $form = $this->buildModernSettingsForm($settings);
+            $this->ctrl->setParameterByClass(ilAdministrationGUI::class, 'ref_id', SYSTEM_FOLDER_ID);
+            $cron_link = $this->ctrl->getLinkTargetByClass(
+                [ilAdministrationGUI::class, ilObjSystemFolderGUI::class, ilCronManagerGUI::class],
+                'render'
+            );
+            $this->ctrl->setParameterByClass(ilAdministrationGUI::class, 'ref_id', $current_ref_id);
 
-        $this->tpl->setContent($cron_info_html . $form);
+            $message_box = $message_box->withLinks([
+                $ui_factory->link()->standard($this->plugin->txt('settings_cron_info_link'), $cron_link)
+            ]);
+        }
+
+        return $DIC->ui()->renderer()->render($message_box);
     }
 
     /**
@@ -100,7 +139,6 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
      */
     private function saveSettings(): void
     {
-        require_once __DIR__ . '/class.ilIssueAnalysisSettings.php';
 
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
@@ -146,35 +184,12 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
         $result = $form->getData();
 
         if ($result !== null) {
-            // Check if retention days are changing
-            $oldRetentionDays = $settings->getRetentionDays();
-            $newRetentionDays = (int)$result['retention_days'];
-
-            // Save the validated data
-            $settings->setRetentionDays($newRetentionDays);
-            $settings->setMaxRecords((int)$result['max_entries']);
-            $settings->setMaskSensitive((bool)$result['sanitize_data']);
-            $settings->setImportTimeLimit((int)$result['import_time_limit']);
-            $settings->setImportLineLimit((int)$result['import_line_limit']);
-
-            // If retention changed, clear source tracking and cleanup existing data
-            if ($oldRetentionDays !== $newRetentionDays) {
-                try {
-                    require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
-                    global $DIC;
-                    if (isset($DIC) && $DIC->offsetExists('database')) {
-                        $repo = new ilIssueAnalysisRepo($DIC->database());
-                        $repo->clearSourceTracking();
-
-                        // If retention period was reduced, also clean up existing data
-                        if ($newRetentionDays > 0 && ($oldRetentionDays === 0 || $newRetentionDays < $oldRetentionDays)) {
-                            $repo->deleteOldEntries($newRetentionDays, 0); // 0 = don't apply max records limit
-                        }
-                    }
-                } catch (Exception $e) {
-                    // Silent fail - tracking will be cleared on next manual action
-                }
-            }
+            // A changed retention period also adjusts the imported data, see setRetentionDays()
+            $settings->setRetentionDays((int) $result['retention_days']);
+            $settings->setMaxRecords((int) $result['max_entries']);
+            $settings->setMaskSensitive((bool) $result['sanitize_data']);
+            $settings->setImportTimeLimit((int) $result['import_time_limit']);
+            $settings->setImportLineLimit((int) $result['import_line_limit']);
 
             $this->tpl->setOnScreenMessage('success', $this->plugin->txt('msg_settings_saved'));
         } else {
@@ -185,16 +200,15 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
     }
 
     /**
-     * Build modern settings form using ILIAS 9 UI controls
+     * Rendered settings form with the current values
      */
-    private function buildModernSettingsForm(ilIssueAnalysisSettings $settings): string
+    private function buildSettingsForm(ilIssueAnalysisSettings $settings): string
     {
         global $DIC;
 
         $ui_factory = $DIC->ui()->factory();
         $renderer = $DIC->ui()->renderer();
 
-        // Create form inputs using modern ILIAS 9 UI
         $inputs = [];
 
         // Retention days

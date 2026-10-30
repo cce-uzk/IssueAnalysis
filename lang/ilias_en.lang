@@ -7,6 +7,8 @@ plugin_description#:#Analysis and management of system error events for monitori
 // Menu and Navigation
 menu_fehleranalyse#:#Issue Analysis
 tab_list#:#Error List
+table_title_entries#:#Error List (%d entries)
+table_title_one_entry#:#Error List (%d entry)
 tab_settings#:#Settings
 tab_statistics#:#Statistics
 back_to_list#:#Back to List
@@ -61,8 +63,8 @@ filter_show_ignored_no#:#Hide (Default)
 settings_retention_days#:#Retention Period (Days)
 settings_max_records#:#Maximum Records Total (Rolling Window)
 settings_mask_sensitive#:#Mask Sensitive Data
-settings_cron_info_title#:#Automated Import (Cron Job)
-settings_cron_info_text#:#Cron job "%s" (ID: %s) available under Administration → Cron Jobs for automated import.
+settings_cron_info_text#:#The automated import is performed by the cron job "%s" (ID: %s). It is inactive by default and is activated and scheduled in the cron job administration.
+settings_cron_info_link#:#Open Cron Jobs
 settings_import_time_limit#:#Time Limit per Import (Seconds)
 settings_import_line_limit#:#Entries Limit per Import
 
@@ -123,7 +125,6 @@ detail_full_error_content#:#Full Error Content
 detail_characters#:#characters
 detail_copy_original#:#Copy Original
 detail_copy_safe_sharing#:#Copy Safe for Sharing
-detail_copy_safe_tooltip#:#Copy sanitized version safe for sharing (paths and sensitive data replaced with placeholders)
 detail_copied#:#Copied!
 detail_copy_failed#:#Copy failed - select text manually
 
@@ -171,8 +172,8 @@ stats_severity_title#:#Severity Distribution
 stats_files_title#:#Top Error Files
 chart_errors#:#Errors
 chart_count#:#Count
-table_total_entries#:#Total Entries (filtered)
 stats_latest#:#latest
+stats_latest_occurrence#:#Last occurrence
 
 // Pagination
 pagination_showing#:#Showing %d to %d of %d entries

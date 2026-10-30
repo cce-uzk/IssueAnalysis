@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/../bootstrap.php';
@@ -18,7 +31,6 @@ class ilIssueAnalysisCronJobFactory
     {
         switch ($job_id) {
             case ilIssueAnalysisImportJob::CRON_JOB_ID:
-                require_once __DIR__ . '/class.ilIssueAnalysisImportJob.php';
                 return new ilIssueAnalysisImportJob();
 
             default:
@@ -28,6 +40,8 @@ class ilIssueAnalysisCronJobFactory
 
     /**
      * Get all available cron jobs
+     *
+     * @return ilCronJob[]
      */
     public function getAll(): array
     {

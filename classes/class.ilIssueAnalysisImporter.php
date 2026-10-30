@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -13,14 +26,13 @@ class ilIssueAnalysisImporter
 {
     private ilIssueAnalysisRepo $repo;
     private ilIssueAnalysisSettings $settings;
-    private ilIssueAnalysisSanitizer $sanitizer;
     private ilLogger $logger;
 
     private int $importedCount = 0;
     private int $skippedCount = 0;
     private int $errorCount = 0;
+    /** @var string[] */
     private array $errors = [];
-    private bool $debugMode = false;
     private bool $lineLimitReached = false;
     private bool $timeLimitReached = false;
 
@@ -28,13 +40,9 @@ class ilIssueAnalysisImporter
     {
         global $DIC;
 
-        require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisSettings.php';
-        require_once __DIR__ . '/class.ilIssueAnalysisSanitizer.php';
 
         $this->repo = new ilIssueAnalysisRepo();
         $this->settings = new ilIssueAnalysisSettings();
-        $this->sanitizer = new ilIssueAnalysisSanitizer($this->settings->getMaskSensitive());
         $this->logger = $DIC->logger()->xial();
     }
 
@@ -52,6 +60,8 @@ class ilIssueAnalysisImporter
 
     /**
      * Import log entries from error log directory
+     *
+     * @return array<string, mixed> Counters and limit flags, see getImportResult()
      */
     public function importLogs(bool $isCronImport = false): array
     {
@@ -64,19 +74,8 @@ class ilIssueAnalysisImporter
 
         $startTime = time();
 
-        try {
-            $timeLimit = $this->settings->getImportTimeLimit();
-
-            try {
-                $lineLimit = $this->settings->getImportLineLimit();
-            } catch (Exception $e2) {
-                $lineLimit = 100; // Fallback
-            }
-        } catch (Exception $e) {
-            // Use defaults if settings fail
-            $timeLimit = 120;
-            $lineLimit = 100;
-        }
+        $timeLimit = $this->settings->getImportTimeLimit();
+        $lineLimit = $this->settings->getImportLineLimit();
 
         $errorLogDir = $this->settings->getErrorLogDirectory();
         if (empty($errorLogDir) || !is_dir($errorLogDir)) {
@@ -119,6 +118,8 @@ class ilIssueAnalysisImporter
 
     /**
      * Get list of ILIAS error files to process
+     *
+     * @return string[] Absolute paths, newest first
      */
     private function getLogFiles(string $errorLogDir): array
     {
@@ -158,7 +159,7 @@ class ilIssueAnalysisImporter
         }
 
         // Sort by modification time (newest first)
-        usort($logFiles, function($a, $b) {
+        usort($logFiles, function ($a, $b) {
             return filemtime($b) - filemtime($a);
         });
 
@@ -201,15 +202,10 @@ class ilIssueAnalysisImporter
             // Only read first 100 KB - Stacktrace is at the beginning, rest is just Request-Data
             $maxReadSize = 100 * 1024; // 100 KB should be enough for message + stacktrace
 
-            if ($fileInfo['size'] > $maxReadSize) {
-                // Large file: read only first chunk
-                $content = @file_get_contents($filePath, false, null, 0, $maxReadSize);
-            } else {
-                // Small file: read completely
-                $content = @file_get_contents($filePath);
-            }
-
+            $content = file_get_contents($filePath, false, null, 0, $maxReadSize);
             if ($content === false) {
+                $this->errorCount++;
+                $this->logger->warning('Could not read error file ' . $filePath);
                 return true; // Continue with next file
             }
 
@@ -263,6 +259,8 @@ class ilIssueAnalysisImporter
 
     /**
      * Parse ILIAS error file content
+     *
+     * @return array<string, mixed>|null Entry for xial_log, null if empty or outside the retention period
      */
     private function parseIliasErrorFile(string $content, string $errorCode, string $filePath): ?array
     {
@@ -356,213 +354,9 @@ class ilIssueAnalysisImporter
     }
 
     /**
-     * Parse a single log line (legacy method, still used for other formats)
-     */
-    private function parseLogLine(string $line): ?array
-    {
-        if (empty($line)) {
-            return null;
-        }
-
-        // Try to parse different log formats
-        $entry = $this->parsePhpErrorLog($line)
-               ?? $this->parseIliasErrorLog($line)
-               ?? $this->parseGenericErrorLog($line);
-
-        if (!$entry) {
-            return null;
-        }
-
-        // Check retention period - skip entries that are too old
-        $retentionDays = $this->settings->getRetentionDays();
-        if ($retentionDays > 0 && isset($entry['timestamp'])) {
-            $cutoffTimestamp = time() - ($retentionDays * 24 * 60 * 60);
-            $entryTimestamp = strtotime($entry['timestamp']);
-
-            if ($entryTimestamp !== false && $entryTimestamp < $cutoffTimestamp) {
-                // Entry is older than retention period, skip it
-                return null;
-            }
-        }
-
-        // Apply sanitization
-        if (isset($entry['request_data'])) {
-            $entry['request_data'] = json_encode($this->sanitizer->sanitizeRequestData(
-                json_decode($entry['request_data'], true) ?: []
-            ));
-        }
-
-        if (isset($entry['stacktrace'])) {
-            $entry['stacktrace'] = $this->sanitizer->sanitizeStacktrace($entry['stacktrace']);
-        }
-
-        if (isset($entry['ip_address'])) {
-            $entry['ip_address'] = $this->sanitizer->sanitizeIpAddress($entry['ip_address']);
-        }
-
-        if (isset($entry['session_id'])) {
-            $entry['session_id'] = $this->sanitizer->sanitizeSessionId($entry['session_id']);
-        }
-
-        if (isset($entry['user_agent'])) {
-            $entry['user_agent_hash'] = $this->sanitizer->sanitizeUserAgent($entry['user_agent']);
-            unset($entry['user_agent']);
-        }
-
-        return $entry;
-    }
-
-    /**
-     * Parse PHP error log format
-     */
-    private function parsePhpErrorLog(string $line): ?array
-    {
-        // PHP error log format: [DD-MMM-YYYY HH:MM:SS UTC] PHP Fatal error: message in file on line N
-        $pattern = '/^\[([^\]]+)\]\s+PHP\s+(\w+)\s+(error|warning|notice):\s*(.+?)(?:\s+in\s+(.+?)\s+on\s+line\s+(\d+))?$/i';
-
-        if (preg_match($pattern, $line, $matches)) {
-            $timestamp = $this->parseTimestamp($matches[1]);
-            $severity = strtolower($matches[2]) . '_' . strtolower($matches[3]);
-            $message = $matches[4];
-            $file = $matches[5] ?? null;
-            $lineNumber = isset($matches[6]) ? (int) $matches[6] : null;
-
-            return [
-                'timestamp' => $timestamp,
-                'severity' => $severity,
-                'message' => $message,
-                'file' => $file,
-                'line' => $lineNumber,
-                'context' => 'php_error'
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * Parse ILIAS error log format (if specific format exists)
-     */
-    private function parseIliasErrorLog(string $line): ?array
-    {
-        // This would need to be adapted based on ILIAS specific error log format
-        return null;
-    }
-
-    /**
-     * Parse generic error log format
-     */
-    private function parseGenericErrorLog(string $line): ?array
-    {
-        // ILIAS format: [timestamp] message
-        $pattern = '/^\[([^\]]+)\]\s+(.+)$/';
-
-        if (preg_match($pattern, $line, $matches)) {
-            $timestamp = $this->parseTimestamp($matches[1]);
-            $message = $matches[2];
-
-            // Determine severity based on message content
-            $severity = $this->determineSeverityFromMessage($message);
-
-            return [
-                'timestamp' => $timestamp,
-                'severity' => $severity,
-                'message' => $message,
-                'context' => 'ilias'
-            ];
-        }
-
-        // Also try format with severity: [timestamp] severity: message
-        $pattern2 = '/^\[([^\]]+)\]\s*(\w+):\s*(.+)$/';
-
-        if (preg_match($pattern2, $line, $matches)) {
-            $timestamp = $this->parseTimestamp($matches[1]);
-            $severity = strtolower($matches[2]);
-            $message = $matches[3];
-
-            return [
-                'timestamp' => $timestamp,
-                'severity' => $severity,
-                'message' => $message,
-                'context' => 'generic'
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * Determine severity from message content
-     */
-    private function determineSeverityFromMessage(string $message): string
-    {
-        $message = strtolower($message);
-
-        if (strpos($message, 'fatal') !== false ||
-            strpos($message, 'critical') !== false) {
-            return 'fatal_error';
-        }
-
-        if (strpos($message, 'error') !== false ||
-            strpos($message, 'exception') !== false ||
-            strpos($message, 'failed') !== false ||
-            strpos($message, 'fail') !== false) {
-            return 'error';
-        }
-
-        if (strpos($message, 'warning') !== false ||
-            strpos($message, 'warn') !== false ||
-            strpos($message, 'deprecated') !== false) {
-            return 'warning';
-        }
-
-        if (strpos($message, 'notice') !== false ||
-            strpos($message, 'info') !== false) {
-            return 'notice';
-        }
-
-        // Default to error for unclassified messages
-        return 'error';
-    }
-
-    /**
-     * Parse timestamp from various formats
-     */
-    private function parseTimestamp(string $timestampStr): string
-    {
-        $formats = [
-            'Y-m-d H:i:s',
-            'd-M-Y H:i:s T',     // 02-May-2024 07:51:00 UTC
-            'j-M-Y H:i:s T',     // 2-May-2024 07:51:00 UTC
-            'M d H:i:s',
-            'Y/m/d H:i:s'
-        ];
-
-        foreach ($formats as $format) {
-            $date = DateTime::createFromFormat($format, $timestampStr);
-            if ($date) {
-                return $date->format('Y-m-d H:i:s');
-            }
-        }
-
-        // Try to handle common variations
-        if (preg_match('/(\d{1,2})-([A-Za-z]{3})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+([A-Z]+)/', $timestampStr, $matches)) {
-            $day = sprintf('%02d', (int)$matches[1]);
-            $month = date('m', strtotime($matches[2] . ' 1'));
-            $year = $matches[3];
-            $hour = $matches[4];
-            $minute = $matches[5];
-            $second = $matches[6];
-
-            return "$year-$month-$day $hour:$minute:$second";
-        }
-
-        // Fallback to current time if parsing fails
-        return date('Y-m-d H:i:s');
-    }
-
-    /**
      * Get file information for tracking
+     *
+     * @return array{inode: string, size: int, mtime: int}
      */
     private function getFileInfo(string $filePath): array
     {
@@ -596,6 +390,8 @@ class ilIssueAnalysisImporter
 
     /**
      * Get import results
+     *
+     * @return array<string, mixed>
      */
     private function getImportResult(): array
     {
@@ -613,19 +409,11 @@ class ilIssueAnalysisImporter
 
     /**
      * Get current statistics
+     *
+     * @return array<string, mixed>
      */
     public function getStatistics(): array
     {
         return $this->repo->getStatistics();
-    }
-
-    /**
-     * Log message for debugging (only in development mode)
-     */
-    private function log(string $message): void
-    {
-        if ($this->debugMode) {
-            $this->logger->debug('IssueAnalysis Import: ' . $message);
-        }
     }
 }

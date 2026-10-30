@@ -1,9 +1,20 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
-
-use ILIAS\GlobalScreen\Provider\ProviderCollection;
 
 
 /**
@@ -22,10 +33,8 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
 
     private static ?ilIssueAnalysisPlugin $instance = null;
 
-    protected ProviderCollection $provider_collection;
-
     /**
-     * Constructor - Initialize plugin and GlobalScreen providers (exact GuidedTour pattern)
+     * Registers the main menu provider when GlobalScreen is available
      */
     public function __construct(
         ilDBInterface $db,
@@ -34,10 +43,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     ) {
         global $DIC;
 
-        // Initialize plugin
-        $this->db = $db;
-        $this->component_repository = $component_repository;
-        $this->id = $id;
         parent::__construct($db, $component_repository, $id);
 
         if (!isset($DIC["global_screen"])) {
@@ -49,14 +54,15 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     }
 
     /**
-     * Add plugin providers to provider collection (exact GuidedTour pattern)
+     * Add the main menu provider to the provider collection of the plugin
      */
     private function addPluginProviders(): void
     {
         global $DIC;
 
-        require_once __DIR__ . '/MainBar/ilIssueAnalysisMainBarProvider.php';
-        $this->provider_collection->setMainBarProvider(new \xial\mainbar\ilIssueAnalysisMainBarProvider($DIC, $this));
+        $this->getGlobalScreenProviderCollection()->setMainBarProvider(
+            new \xial\mainbar\ilIssueAnalysisMainBarProvider($DIC, $this)
+        );
     }
 
     /**
@@ -75,17 +81,18 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
         /** @var ilComponentFactory $component_factory */
         $component_factory = $DIC['component.factory'];
 
-        if (isset($component_factory) && isset($component_repository)) {
-            $plugin_info = $component_repository->getComponentByTypeAndName(
-                self::CTYPE,
-                self::CNAME
-            )->getPluginSlotById(self::SLOT_ID)->getPluginByName(self::PLUGIN_NAME);
+        $plugin_info = $component_repository->getComponentByTypeAndName(
+            self::CTYPE,
+            self::CNAME
+        )->getPluginSlotById(self::SLOT_ID)->getPluginByName(self::PLUGIN_NAME);
 
-            self::$instance = $component_factory->getPlugin($plugin_info->getId());
-            return self::$instance;
+        $plugin = $component_factory->getPlugin($plugin_info->getId());
+        if (!$plugin instanceof self) {
+            return null;
         }
 
-        return null;
+        self::$instance = $plugin;
+        return self::$instance;
     }
 
     /**
@@ -131,36 +138,11 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     }
 
     /**
-     * Plugin initialization
-     */
-    protected function init(): void
-    {
-        parent::init();
-    }
-
-    /**
      * Get UI Hook GUI
      */
     public function getUIClassInstance(): ilIssueAnalysisUIHookGUI
     {
-        require_once __DIR__ . '/class.ilIssueAnalysisUIHookGUI.php';
         return new ilIssueAnalysisUIHookGUI();
-    }
-
-    /**
-     * Install plugin
-     */
-    public function install(): void
-    {
-        parent::install();
-    }
-
-    /**
-     * After install hook
-     */
-    protected function afterInstall(): void
-    {
-        parent::afterInstall();
     }
 
     /**
@@ -168,7 +150,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
      */
     public function getCronJobInstances(): array
     {
-        require_once __DIR__ . '/Cron/class.ilIssueAnalysisCronJobFactory.php';
         $factory = new ilIssueAnalysisCronJobFactory();
         return $factory->getAll();
     }
@@ -178,7 +159,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
      */
     public function getCronJobInstance(string $jobId): ilCronJob
     {
-        require_once __DIR__ . '/Cron/class.ilIssueAnalysisCronJobFactory.php';
         $factory = new ilIssueAnalysisCronJobFactory();
         $job = $factory->getInstance($jobId);
 
@@ -190,26 +170,14 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     }
 
     /**
-     * Uninstall plugin
+     * Remove cron job, tables and settings; languages and the plugin state
+     * are removed by ilPlugin::uninstall() afterwards
      */
-    public function uninstall(): bool
+    protected function beforeUninstall(): bool
     {
-        global $DIC;
-
-        // Uninstall languages
-        $this->getLanguageHandler()->uninstall();
-
-        // Deregister from component repository
-        $this->component_repository->removeStateInformationOf($this->getId());
-
-        // Drop tables
-        $this->dropTables();
-
-        // Remove plugin settings
-        $this->removeSettings();
-
-        // Clean up cron jobs
         $this->cleanupCronJobs();
+        $this->dropTables();
+        $this->removeSettings();
 
         return true;
     }
@@ -233,6 +201,10 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
         if ($db->tableExists('xial_error')) {
             $db->dropTable('xial_error');
         }
+        // Removed by dbupdate step 5, but still present if that step never ran
+        if ($db->tableExists('xial_detail')) {
+            $db->dropTable('xial_detail');
+        }
     }
 
 
@@ -241,7 +213,6 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
      */
     private function removeSettings(): void
     {
-        global $DIC;
         $settings = new ilSetting('xial');
         $settings->deleteAll();
     }
@@ -254,21 +225,15 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
         global $DIC;
 
         try {
-            // Get cron manager and deactivate our cron jobs
-            $cron_manager = $DIC['cron.manager'];
-            if ($cron_manager && method_exists($cron_manager, 'isJobActive')) {
-                require_once __DIR__ . '/Cron/class.ilIssueAnalysisImportJob.php';
-                $job_id = ilIssueAnalysisImportJob::CRON_JOB_ID;
+            $cron_manager = $DIC->cron()->manager();
+            $job_id = ilIssueAnalysisImportJob::CRON_JOB_ID;
 
-                if ($cron_manager->isJobActive($job_id)) {
-                    // Get the actual job instance and current user object
-                    $job = $this->getCronJobInstance($job_id);
-                    $actor = $DIC->user();
-                    $cron_manager->deactivateJob($job, $actor);
-                }
+            if ($cron_manager->isJobActive($job_id)) {
+                $cron_manager->deactivateJob($this->getCronJobInstance($job_id), $DIC->user());
             }
         } catch (Exception $e) {
-            // Silent fail - don't fail uninstall due to cron cleanup issues
+            // Do not fail the uninstall because of the cron job, but leave a trace
+            $DIC->logger()->root()->warning('IssueAnalysis: could not deactivate cron job: ' . $e->getMessage());
         }
     }
 }

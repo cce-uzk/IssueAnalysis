@@ -22,7 +22,6 @@ class ComposerStaticInite50119e9e42096ecf66be87d0c930c64
 
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
-        'ILIAS\\Plugin\\IssueAnalysis\\Administration\\IssueAnalysisAdministrationProvider' => __DIR__ . '/../..' . '/classes/Administration/IssueAnalysisAdministrationProvider.php',
         'ILIAS\\Plugin\\xial\\Exception\\ImportException' => __DIR__ . '/../..' . '/src/Exception/ImportException.php',
         'ILIAS\\Plugin\\xial\\Exception\\IssueAnalysisException' => __DIR__ . '/../..' . '/src/Exception/IssueAnalysisException.php',
         'ILIAS\\Plugin\\xial\\Service\\DoubleSubmissionGuard' => __DIR__ . '/../..' . '/src/Service/DoubleSubmissionGuard.php',
@@ -40,7 +39,6 @@ class ComposerStaticInite50119e9e42096ecf66be87d0c930c64
         'ilIssueAnalysisTableDataRetrieval' => __DIR__ . '/../..' . '/classes/class.ilIssueAnalysisTableGUI.php',
         'ilIssueAnalysisTableGUI' => __DIR__ . '/../..' . '/classes/class.ilIssueAnalysisTableGUI.php',
         'ilIssueAnalysisUIHookGUI' => __DIR__ . '/../..' . '/classes/class.ilIssueAnalysisUIHookGUI.php',
-        'ilObjIssueAnalysis' => __DIR__ . '/../..' . '/classes/class.ilObjIssueAnalysis.php',
         'xial\\mainbar\\ilIssueAnalysisMainBarProvider' => __DIR__ . '/../..' . '/classes/MainBar/ilIssueAnalysisMainBarProvider.php',
     );
 

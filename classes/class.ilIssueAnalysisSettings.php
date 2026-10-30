@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -40,14 +53,8 @@ class ilIssueAnalysisSettings
         $oldValue = $this->getRetentionDays();
         $this->settings->set('retention_days', (string) $days);
 
-        // If retention days changed, clear source tracking and cleanup existing data
         if ($oldValue !== $days) {
-            $this->clearSourceTrackingOnRetentionChange();
-
-            // If retention period was reduced, also clean up existing data that exceeds new limit
-            if ($days > 0 && ($oldValue === 0 || $days < $oldValue)) {
-                $this->cleanupDataOnRetentionChange($days);
-            }
+            $this->applyRetentionChange($oldValue, $days);
         }
     }
 
@@ -118,49 +125,15 @@ class ilIssueAnalysisSettings
 
     /**
      * Get ILIAS error log directory from core settings
+     *
+     * Only the directory configured in ILIAS (Logging → Error Logging, error_path in
+     * ilias.ini.php) is used; '' if it is not configured or not readable.
      */
     public function getErrorLogDirectory(): string
     {
-        try {
-            // Use the same method as ILIAS Core Logging Settings
-            require_once 'Services/Logging/classes/error/class.ilLoggingErrorSettings.php';
-            $errorSettings = ilLoggingErrorSettings::getInstance();
-            $errorLogDir = $errorSettings->folder();
+        $folder = ilLoggingErrorSettings::getInstance()->folder();
 
-            // If we have a valid directory, return it
-            if (!empty($errorLogDir) && is_dir($errorLogDir) && is_readable($errorLogDir)) {
-                return $errorLogDir;
-            }
-
-            // Fallback: try to read directly from ilias.ini.php like ilLoggingErrorSettings does
-            global $DIC;
-            if (isset($DIC) && $DIC->offsetExists('iliasIni')) {
-                $iliasIni = $DIC->iliasIni();
-                $errorLogDir = $iliasIni->readVariable("log", "error_path");
-
-                if (!empty($errorLogDir) && is_dir($errorLogDir) && is_readable($errorLogDir)) {
-                    return $errorLogDir;
-                }
-            }
-
-        } catch (Exception $e) {
-            // Fallback handling
-        }
-
-        // Final fallback to common locations
-        $possiblePaths = [
-            '/var/www/logs/errors',
-            ILIAS_ABSOLUTE_PATH . '/data/errors',
-            '/var/log/ilias/errors'
-        ];
-
-        foreach ($possiblePaths as $path) {
-            if (is_dir($path) && is_readable($path)) {
-                return $path;
-            }
-        }
-
-        return '';
+        return $folder !== '' && is_dir($folder) && is_readable($folder) ? $folder : '';
     }
 
     /**
@@ -197,6 +170,8 @@ class ilIssueAnalysisSettings
 
     /**
      * Get all settings as array
+     *
+     * @return array<string, int|bool|string>
      */
     public function getAllSettings(): array
     {
@@ -225,44 +200,28 @@ class ilIssueAnalysisSettings
     }
 
     /**
-     * Clear source tracking when retention changes
+     * Adjust the imported data to a changed retention period
+     *
+     * The import tracking is reset, so that files skipped because of the old period
+     * are read again. If the period was reduced, older entries are deleted at once.
      */
-    private function clearSourceTrackingOnRetentionChange(): void
+    private function applyRetentionChange(int $oldDays, int $newDays): void
     {
-        try {
-            // We need access to the repo to clear tracking
-            require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
-            global $DIC;
-            if (isset($DIC) && $DIC->offsetExists('database')) {
-                $repo = new ilIssueAnalysisRepo($DIC->database());
-                $repo->clearSourceTracking();
-            }
-        } catch (Exception $e) {
-            // Silent fail - tracking will be cleared on next manual action
-        }
-    }
+        $repo = new ilIssueAnalysisRepo();
+        $repo->clearSourceTracking();
 
-    /**
-     * Clean up existing data when retention period is reduced
-     */
-    private function cleanupDataOnRetentionChange(int $newRetentionDays): void
-    {
-        try {
-            require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
-            global $DIC;
-            if (isset($DIC) && $DIC->offsetExists('database')) {
-                $repo = new ilIssueAnalysisRepo($DIC->database());
-                // Delete entries older than new retention period
-                $repo->deleteOldEntries($newRetentionDays, 0); // 0 = don't apply max records limit
-            }
-        } catch (Exception $e) {
-            // Silent fail - cleanup will happen on next scheduled cleanup
+        if ($newDays > 0 && ($oldDays === 0 || $newDays < $oldDays)) {
+            // 0 = do not apply the maximum number of records here
+            $repo->deleteOldEntries($newDays, 0);
         }
     }
 
     /**
      * Validate settings
      * Returns array of language keys for validation errors (use $plugin->txt() to translate)
+     *
+     * @param array<string, mixed> $settings
+     * @return string[] Language keys of the errors
      */
     public function validateSettings(array $settings): array
     {

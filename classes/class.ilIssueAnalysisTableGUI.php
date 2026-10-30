@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
@@ -6,8 +19,8 @@ require_once __DIR__ . '/bootstrap.php';
 /**
  * Data table component for displaying ILIAS error log entries
  *
- * Provides a modern ILIAS UI table with filtering, sorting, and actions
- * for viewing imported error log data with clickable error codes.
+ * The table reads the imported entries via ilIssueAnalysisTableDataRetrieval and
+ * links each error code to its detail view.
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -40,33 +53,33 @@ class ilIssueAnalysisTableGUI
     }
 
     /**
-     * Simple getHTML method following CustomMetaBarLinks pattern
+     * Render the data table of the error entries for the current filter
      */
     public function getHTML(): string
     {
-        $data_retrieval = new ilIssueAnalysisTableDataRetrieval();
-        $table = $this->createTable($data_retrieval);
+        $data_retrieval = new ilIssueAnalysisTableDataRetrieval($this->parent_obj);
 
-        // Get total count for current filter
-        $total_count = $data_retrieval->getTotalRowCount(null, null);
+        // The pagination of the data table does not show the number of entries,
+        // so the number for the current filter is part of the title
+        $count = (int) $data_retrieval->getTotalRowCount(null, null);
+        $title = sprintf(
+            $this->plugin->txt($count === 1 ? 'table_title_one_entry' : 'table_title_entries'),
+            $count
+        );
 
-        // Create info text about total entries
-        $info_text = $this->plugin->txt('table_total_entries') . ': ' . $total_count;
-        $info_component = $this->ui_factory->legacy('<div style="margin-bottom: 10px; font-weight: bold; color: #666;">' . $info_text . '</div>');
-
-        return $this->renderer->render([$info_component, $table]);
+        return $this->renderer->render($this->createTable($data_retrieval, $title));
     }
 
     /**
-     * Create the error analysis table following CustomMetaBarLinks pattern
+     * Data table with sortable and optional columns and the row actions
      */
-    protected function createTable(ilIssueAnalysisTableDataRetrieval $data_retrieval): \ILIAS\UI\Component\Table\Data
+    protected function createTable(ilIssueAnalysisTableDataRetrieval $data_retrieval, string $title): \ILIAS\UI\Component\Table\Data
     {
         // Define columns with appropriate sorting
         $columns = [
             'timestamp' => $this->ui_factory->table()->column()->text($this->plugin->txt('col_timestamp'))
                 ->withIsSortable(true),
-            'code' => $this->ui_factory->table()->column()->text($this->plugin->txt('detail_error_code'))
+            'code' => $this->ui_factory->table()->column()->link($this->plugin->txt('detail_error_code'))
                 ->withIsSortable(true),
             'status' => $this->ui_factory->table()->column()->statusIcon($this->plugin->txt('col_status'))
                 ->withIsSortable(true),
@@ -83,12 +96,11 @@ class ilIssueAnalysisTableGUI
 
         // Build table with actions
         $table = $this->ui_factory->table()->data(
-            '',
+            $title,
             $columns,
             $data_retrieval
         );
 
-        // Add actions following CustomMetaBarLinks pattern
         $actions = $this->createActions();
         if (!empty($actions)) {
             $table = $table->withActions($actions);
@@ -98,7 +110,9 @@ class ilIssueAnalysisTableGUI
     }
 
     /**
-     * Create table actions following CustomMetaBarLinks pattern
+     * Row actions; they are sent as namespaced query parameters to handleTableActions()
+     *
+     * @return array<string, \ILIAS\UI\Component\Table\Action\Action>
      */
     protected function createActions(): array
     {
@@ -148,17 +162,43 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
     private ilIssueAnalysisRepo $repo;
     private \ILIAS\UI\Factory $ui_factory;
     private ilLanguage $lng;
+    private ilCtrl $ctrl;
 
-    public function __construct()
+    /**
+     * @param object|null $parent_gui GUI that handles the command viewDetails
+     */
+    public function __construct(private ?object $parent_gui = null)
     {
         global $DIC;
 
-        require_once __DIR__ . '/class.ilIssueAnalysisRepo.php';
         $this->repo = new ilIssueAnalysisRepo();
         $this->ui_factory = $DIC->ui()->factory();
         $this->lng = $DIC->language();
+        $this->ctrl = $DIC->ctrl();
     }
 
+    /**
+     * Link of the error code to the detail view of the entry
+     */
+    private function buildDetailsLink(int $id, string $code): \ILIAS\UI\Component\Link\Standard
+    {
+        // The link component outputs its label as HTML
+        $label = htmlspecialchars($code !== '' ? $code : '-');
+        if ($this->parent_gui === null) {
+            return $this->ui_factory->link()->standard($label, '#');
+        }
+
+        $this->ctrl->setParameter($this->parent_gui, 'id', $id);
+        $url = $this->ctrl->getLinkTarget($this->parent_gui, 'viewDetails');
+        $this->ctrl->clearParameterByClass(get_class($this->parent_gui), 'id');
+
+        return $this->ui_factory->link()->standard($label, $url);
+    }
+
+    /**
+     * @param array<string, mixed>|null $filter_data
+     * @param array<string, mixed>|null $additional_parameters
+     */
     public function getRows(
         \ILIAS\UI\Component\Table\DataRowBuilder $row_builder,
         array $visible_column_ids,
@@ -172,7 +212,7 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
         $showIgnored = false;
 
         // Check for session filter data (from filter form)
-        $session_filter = $_SESSION['xial_filter'] ?? null;
+        $session_filter = ilSession::get(ilIssueAnalysisGUI::SESSION_FILTER);
         if ($session_filter) {
             if (!empty($session_filter['severity'])) {
                 $filter['severity'] = $session_filter['severity'];
@@ -189,9 +229,8 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             if (!empty($session_filter['to_date'])) {
                 $filter['to_date'] = $session_filter['to_date'];
             }
-            // NEW: Check for show_ignored filter (select with '0' or '1')
             if (isset($session_filter['show_ignored'])) {
-                $showIgnored = ($session_filter['show_ignored'] === '1' || $session_filter['show_ignored'] === 1);
+                $showIgnored = $session_filter['show_ignored'] === 'show';
             }
         }
 
@@ -232,9 +271,6 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
         );
 
         foreach ($entries as $entry) {
-            // Create details link using administration context
-            $detailsLink = 'ilias.php?baseClass=iladministrationgui&cmdClass=ilIssueAnalysisAdminGUI&cmd=viewDetails&ref_id=' . SYSTEM_FOLDER_ID . '&id=' . $entry['id'];
-
             // Status icon: checkmark if visible, X if ignored/hidden using ILIAS standard icons
             $isIgnored = isset($entry['error_ignored']) && $entry['error_ignored'] == 1;
             $statusIcon = $this->ui_factory->symbol()->icon()->custom(
@@ -245,22 +281,31 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
                 \ILIAS\UI\Component\Symbol\Icon\Icon::SMALL
             );
 
+            // Text columns of the data table are output as HTML; error messages can
+            // contain HTML from the failed request and must be escaped
+            $message = mb_substr($entry['message'], 0, 100) . (mb_strlen($entry['message']) > 100 ? '...' : '');
+            $file = $entry['file'] ? $entry['file'] . ($entry['line'] ? ':' . $entry['line'] : '') : '-';
+
             $row_data = [
                 'timestamp' => $entry['timestamp'],
-                'code' => '<a href="' . $detailsLink . '" style="color: #007cba; text-decoration: underline;">' . ($entry['code'] ?: '-') . '</a>',
+                'code' => $this->buildDetailsLink((int) $entry['id'], (string) $entry['code']),
                 'status' => $statusIcon,
-                'level' => strtoupper($entry['severity']),
-                'message' => mb_substr($entry['message'], 0, 100) . (mb_strlen($entry['message']) > 100 ? '...' : ''),
-                'file' => $entry['file'] ? $entry['file'] . ($entry['line'] ? ':' . $entry['line'] : '') : '-'
+                'level' => htmlspecialchars(strtoupper((string) $entry['severity'])),
+                'message' => htmlspecialchars($message),
+                'file' => htmlspecialchars($file)
             ];
 
             yield $row_builder->buildDataRow(
-                (string)$entry['id'],
+                (string) $entry['id'],
                 $row_data
             );
         }
     }
 
+    /**
+     * @param array<string, mixed>|null $filter_data
+     * @param array<string, mixed>|null $additional_parameters
+     */
     public function getTotalRowCount(
         ?array $filter_data,
         ?array $additional_parameters
@@ -270,7 +315,7 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
         $showIgnored = false;
 
         // Check for session filter data (from filter form)
-        $session_filter = $_SESSION['xial_filter'] ?? null;
+        $session_filter = ilSession::get(ilIssueAnalysisGUI::SESSION_FILTER);
         if ($session_filter) {
             if (!empty($session_filter['severity'])) {
                 $filter['severity'] = $session_filter['severity'];
@@ -287,9 +332,8 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
             if (!empty($session_filter['to_date'])) {
                 $filter['to_date'] = $session_filter['to_date'];
             }
-            // NEW: Check for show_ignored filter (select with '0' or '1')
             if (isset($session_filter['show_ignored'])) {
-                $showIgnored = ($session_filter['show_ignored'] === '1' || $session_filter['show_ignored'] === 1);
+                $showIgnored = $session_filter['show_ignored'] === 'show';
             }
         }
 

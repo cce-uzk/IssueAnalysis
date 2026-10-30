@@ -1,10 +1,10 @@
-# Claude Code related files
+# Claude Code (internal working documents)
 .claude/
 CLAUDE.md
 
 # IDE and editor files
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
@@ -17,38 +17,41 @@ CLAUDE.md
 .Trashes
 ehthumbs.db
 Thumbs.db
+*:Zone.Identifier
 
-# PHP temporary files
+# Composer
+composer.lock
+
+# Tests and code style
+.phpunit.result.cache
+.phpunit.cache/
+.php-cs-fixer.cache
+/coverage/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Logs, temporary and backup files
+*.log
+error_log
 *.tmp
 *.bak
 *.backup
+/tmp/
+/temp/
+/cache/
 
-# Log files
-*.log
-error_log
-
-# Development and test files
-test_*.php
-*_test.php
-debug_*.php
-tmp/
-temp/
-composer.lock
-
-# Node modules (if any JS tooling is added)
-node_modules/
-npm-debug.log
-yarn-error.log
+# Local scratch scripts in the plugin root
+/test_*.php
+/debug_*.php
 
 # Build artifacts
-dist/
-build/
+/build/
+/dist/
 
 # Environment files
 .env
 .env.local
 .env.*.local
-
-# Cache directories
-cache/
-.cache/

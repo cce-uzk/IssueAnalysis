@@ -1,0 +1,85 @@
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
+
+
+/**
+ * Replacements for the ILIAS base classes used by the tests
+ *
+ * The file extension .stub keeps this file out of Composer class maps; the ILIAS
+ * class map scans the plugin directory and must not find a second definition of
+ * these classes.
+ */
+
+if (!class_exists('ilSession')) {
+    /**
+     * In-memory replacement for the ILIAS session
+     */
+    class ilSession
+    {
+        /** @var array<string, mixed> */
+        private static array $values = [];
+
+        /**
+         * @param mixed $a_val
+         */
+        public static function set(string $a_var, $a_val): void
+        {
+            self::$values[$a_var] = $a_val;
+        }
+
+        /**
+         * @return mixed
+         */
+        public static function get(string $a_var)
+        {
+            return self::$values[$a_var] ?? null;
+        }
+
+        public static function clear(string $a_var): void
+        {
+            unset(self::$values[$a_var]);
+        }
+
+        public static function reset(): void
+        {
+            self::$values = [];
+        }
+    }
+}
+
+if (!class_exists('ilSetting')) {
+    /**
+     * In-memory replacement for the database-backed ILIAS settings
+     */
+    class ilSetting
+    {
+        /** @var array<string, string> */
+        private array $values = [];
+
+        public function __construct(string $a_module = 'common')
+        {
+        }
+
+        public function get(string $a_keyword, ?string $a_default_value = null): ?string
+        {
+            return $this->values[$a_keyword] ?? $a_default_value;
+        }
+
+        public function set(string $a_key, string $a_val): void
+        {
+            $this->values[$a_key] = $a_val;
+        }
+    }
+}

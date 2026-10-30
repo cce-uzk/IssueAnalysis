@@ -7,6 +7,8 @@ plugin_description#:#Analyse und Verwaltung von System-Fehlerereignissen zur Üb
 // Menu and Navigation
 menu_fehleranalyse#:#Fehleranalyse
 tab_list#:#Fehlerliste
+table_title_entries#:#Fehlerliste (%d Einträge)
+table_title_one_entry#:#Fehlerliste (%d Eintrag)
 tab_settings#:#Einstellungen
 tab_statistics#:#Statistiken
 back_to_list#:#Zurück zur Liste
@@ -61,8 +63,8 @@ filter_show_ignored_no#:#Verbergen (Standard)
 settings_retention_days#:#Aufbewahrungszeit (Tage)
 settings_max_records#:#Maximale Datensätze gesamt (Rolling Window)
 settings_mask_sensitive#:#Sensible Daten maskieren
-settings_cron_info_title#:#Automatischer Import (Cron Job)
-settings_cron_info_text#:#Cron Job "%s" (ID: %s) verfügbar unter Administration → Cron Jobs für automatischen Import.
+settings_cron_info_text#:#Der automatische Import erfolgt über den Cron Job „%s“ (ID: %s). Er ist standardmäßig deaktiviert und wird in der Cron-Job-Administration aktiviert und geplant.
+settings_cron_info_link#:#Cron Jobs öffnen
 settings_import_time_limit#:#Zeitlimit pro Import (Sekunden)
 settings_import_line_limit#:#Einträge-Limit pro Import
 
@@ -123,7 +125,6 @@ detail_full_error_content#:#Vollständiger Fehlerinhalt
 detail_characters#:#Zeichen
 detail_copy_original#:#Original kopieren
 detail_copy_safe_sharing#:#Sicher für Teilen kopieren
-detail_copy_safe_tooltip#:#Bereinigte Version kopieren, sicher zum Teilen (Pfade und sensible Daten durch Platzhalter ersetzt)
 detail_copied#:#Kopiert!
 detail_copy_failed#:#Kopieren fehlgeschlagen - Text manuell auswählen
 
@@ -171,8 +172,8 @@ stats_severity_title#:#Schweregrad-Verteilung
 stats_files_title#:#Top Fehlerdateien
 chart_errors#:#Fehler
 chart_count#:#Anzahl
-table_total_entries#:#Gesamtanzahl Einträge (gefiltert)
 stats_latest#:#zuletzt
+stats_latest_occurrence#:#Zuletzt aufgetreten
 
 // Pagination
 pagination_showing#:#Zeige %d bis %d von %d Einträgen

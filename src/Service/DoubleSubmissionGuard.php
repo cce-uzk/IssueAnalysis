@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ILIAS\Plugin\xial\Service;
 
@@ -25,18 +38,12 @@ class DoubleSubmissionGuard
     {
         $token = bin2hex(random_bytes(16));
 
-        // Store token with timestamp in session
-        if (!isset($_SESSION[self::SESSION_KEY])) {
-            $_SESSION[self::SESSION_KEY] = [];
-        }
-
-        // Clean old tokens
-        self::cleanExpiredTokens();
-
-        $_SESSION[self::SESSION_KEY][$action] = [
+        $tokens = self::withoutExpiredTokens(self::getTokens());
+        $tokens[$action] = [
             'token' => $token,
             'timestamp' => time()
         ];
+        self::setTokens($tokens);
 
         return $token;
     }
@@ -50,42 +57,23 @@ class DoubleSubmissionGuard
      */
     public static function validateAndConsumeToken(string $action, string $token): bool
     {
-        if (!isset($_SESSION[self::SESSION_KEY][$action])) {
+        $tokens = self::getTokens();
+        if (!isset($tokens[$action])) {
             return false;
         }
 
-        $stored = $_SESSION[self::SESSION_KEY][$action];
+        $stored = $tokens[$action];
 
         // Check if token matches and hasn't expired
-        if ($stored['token'] !== $token) {
+        if (!hash_equals((string) $stored['token'], $token)) {
             return false;
         }
 
-        if (time() - $stored['timestamp'] > self::TOKEN_LIFETIME) {
-            unset($_SESSION[self::SESSION_KEY][$action]);
-            return false;
-        }
+        // Token is valid or expired - consume it either way (one-time use)
+        unset($tokens[$action]);
+        self::setTokens($tokens);
 
-        // Token is valid - consume it (one-time use)
-        unset($_SESSION[self::SESSION_KEY][$action]);
-        return true;
-    }
-
-    /**
-     * Clean expired tokens from session
-     */
-    private static function cleanExpiredTokens(): void
-    {
-        if (!isset($_SESSION[self::SESSION_KEY])) {
-            return;
-        }
-
-        $now = time();
-        foreach ($_SESSION[self::SESSION_KEY] as $action => $data) {
-            if ($now - $data['timestamp'] > self::TOKEN_LIFETIME) {
-                unset($_SESSION[self::SESSION_KEY][$action]);
-            }
-        }
+        return time() - (int) $stored['timestamp'] <= self::TOKEN_LIFETIME;
     }
 
     /**
@@ -97,13 +85,12 @@ class DoubleSubmissionGuard
      */
     public static function isInCooldown(string $action, int $cooldownSeconds = 2): bool
     {
-        $key = self::SESSION_KEY . '_last_' . $action;
-
-        if (!isset($_SESSION[$key])) {
+        $last = \ilSession::get(self::SESSION_KEY . '_last_' . $action);
+        if ($last === null) {
             return false;
         }
 
-        return (time() - $_SESSION[$key]) < $cooldownSeconds;
+        return (time() - (int) $last) < $cooldownSeconds;
     }
 
     /**
@@ -113,6 +100,36 @@ class DoubleSubmissionGuard
      */
     public static function markExecuted(string $action): void
     {
-        $_SESSION[self::SESSION_KEY . '_last_' . $action] = time();
+        \ilSession::set(self::SESSION_KEY . '_last_' . $action, time());
+    }
+
+    /**
+     * @return array<string, array{token: string, timestamp: int}>
+     */
+    private static function getTokens(): array
+    {
+        $tokens = \ilSession::get(self::SESSION_KEY);
+        return is_array($tokens) ? $tokens : [];
+    }
+
+    /**
+     * @param array<string, array{token: string, timestamp: int}> $tokens
+     */
+    private static function setTokens(array $tokens): void
+    {
+        \ilSession::set(self::SESSION_KEY, $tokens);
+    }
+
+    /**
+     * @param array<string, array{token: string, timestamp: int}> $tokens
+     * @return array<string, array{token: string, timestamp: int}>
+     */
+    private static function withoutExpiredTokens(array $tokens): array
+    {
+        $now = time();
+        return array_filter(
+            $tokens,
+            static fn(array $data): bool => $now - (int) $data['timestamp'] <= self::TOKEN_LIFETIME
+        );
     }
 }

@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/../bootstrap.php';
@@ -24,8 +37,6 @@ class ilIssueAnalysisImportJob extends ilCronJob
     {
         global $DIC;
 
-        require_once __DIR__ . '/../class.ilIssueAnalysisSettings.php';
-        require_once __DIR__ . '/../class.ilIssueAnalysisImporter.php';
 
         $this->settings = new ilIssueAnalysisSettings();
         $this->importer = new ilIssueAnalysisImporter();
@@ -182,6 +193,8 @@ class ilIssueAnalysisImportJob extends ilCronJob
 
     /**
      * Get custom settings values (if needed in future)
+     *
+     * @param array<string, mixed> $fields
      */
     public function addToExternalSettingsForm(int $form_id, array &$fields, bool $is_active): void
     {

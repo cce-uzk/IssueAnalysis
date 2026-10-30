@@ -1,11 +1,26 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the IssueAnalysis plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
 
 /**
  * UI Hook GUI class for IssueAnalysis plugin
- * Integrates the plugin into ILIAS administration
+ *
+ * The plugin does not modify any ILIAS output; the menu entry is provided by
+ * ilIssueAnalysisMainBarProvider. This class only routes requests to ilIssueAnalysisGUI.
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  *
@@ -15,98 +30,12 @@ require_once __DIR__ . '/bootstrap.php';
 class ilIssueAnalysisUIHookGUI extends ilUIHookPluginGUI
 {
     /**
-     * Get HTML for the UI hook
-     */
-    public function getHTML(string $component, string $part, array $parameters = []): array
-    {
-        return ['mode' => ilUIHookPluginGUI::KEEP, 'html' => ''];
-    }
-
-    /**
-     * Modify GUI objects
-     */
-    public function modifyGUI(string $component, string $part, array $parameters = []): void
-    {
-        global $DIC;
-
-        // Hook into administration overview page
-        if ($component === 'Services/Administration' && $part === 'system_management') {
-            $this->addSystemManagementEntry($parameters);
-        }
-
-        // Hook into administration template to add custom menu item
-        if ($component === 'Services/Administration' && $part === 'administration_overview') {
-            $this->addAdministrationOverviewEntry($parameters);
-        }
-    }
-
-    /**
-     * Add entry to system management section
-     */
-    private function addSystemManagementEntry(array $parameters): void
-    {
-        global $DIC;
-
-        $user = $DIC->user();
-        $access = $DIC->access();
-
-        // Only show for administrators
-        if ($user->getId() === ANONYMOUS_USER_ID || !$access->checkAccess('read', '', SYSTEM_FOLDER_ID)) {
-            return;
-        }
-
-        $plugin = $this->getPluginObject();
-        if (!$plugin || !$plugin->isActive()) {
-            return;
-        }
-    }
-
-    /**
-     * Add entry to administration overview
-     */
-    private function addAdministrationOverviewEntry(array $parameters): void
-    {
-        global $DIC;
-
-        $user = $DIC->user();
-        $access = $DIC->access();
-        $ctrl = $DIC->ctrl();
-
-        // Only show for administrators
-        if ($user->getId() === ANONYMOUS_USER_ID || !$access->checkAccess('read', '', SYSTEM_FOLDER_ID)) {
-            return;
-        }
-
-        $plugin = $this->getPluginObject();
-        if (!$plugin || !$plugin->isActive()) {
-            return;
-        }
-    }
-
-    /**
      * Execute command
      */
     public function executeCommand(): void
     {
         global $DIC;
 
-        $ctrl = $DIC->ctrl();
-        $next_class = $ctrl->getNextClass($this);
-
-        switch ($next_class) {
-            case 'ilissueanalysisgui':
-                require_once __DIR__ . '/class.ilIssueAnalysisGUI.php';
-                $gui = new ilIssueAnalysisGUI();
-                $ctrl->forwardCommand($gui);
-                break;
-
-            default:
-                // Default to main functionality
-                require_once __DIR__ . '/class.ilIssueAnalysisGUI.php';
-                $gui = new ilIssueAnalysisGUI();
-                $ctrl->forwardCommand($gui);
-                break;
-        }
+        $DIC->ctrl()->forwardCommand(new ilIssueAnalysisGUI());
     }
-
 }

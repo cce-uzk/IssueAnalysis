@@ -7,7 +7,6 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
-    'ILIAS\\Plugin\\IssueAnalysis\\Administration\\IssueAnalysisAdministrationProvider' => $baseDir . '/classes/Administration/IssueAnalysisAdministrationProvider.php',
     'ILIAS\\Plugin\\xial\\Exception\\ImportException' => $baseDir . '/src/Exception/ImportException.php',
     'ILIAS\\Plugin\\xial\\Exception\\IssueAnalysisException' => $baseDir . '/src/Exception/IssueAnalysisException.php',
     'ILIAS\\Plugin\\xial\\Service\\DoubleSubmissionGuard' => $baseDir . '/src/Service/DoubleSubmissionGuard.php',
@@ -25,6 +24,5 @@ return array(
     'ilIssueAnalysisTableDataRetrieval' => $baseDir . '/classes/class.ilIssueAnalysisTableGUI.php',
     'ilIssueAnalysisTableGUI' => $baseDir . '/classes/class.ilIssueAnalysisTableGUI.php',
     'ilIssueAnalysisUIHookGUI' => $baseDir . '/classes/class.ilIssueAnalysisUIHookGUI.php',
-    'ilObjIssueAnalysis' => $baseDir . '/classes/class.ilObjIssueAnalysis.php',
     'xial\\mainbar\\ilIssueAnalysisMainBarProvider' => $baseDir . '/classes/MainBar/ilIssueAnalysisMainBarProvider.php',
 );
