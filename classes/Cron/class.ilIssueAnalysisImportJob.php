@@ -16,7 +16,9 @@ declare(strict_types=1);
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/../bootstrap.php';
 
-use ILIAS\Cron\Schedule\CronJobScheduleType;
+use ILIAS\Cron\CronJob;
+use ILIAS\Cron\Job\JobResult;
+use ILIAS\Cron\Job\Schedule\JobScheduleType;
 
 /**
  * Cron job class for IssueAnalysis plugin
@@ -24,7 +26,7 @@ use ILIAS\Cron\Schedule\CronJobScheduleType;
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
-class ilIssueAnalysisImportJob extends ilCronJob
+class ilIssueAnalysisImportJob extends CronJob
 {
     public const CRON_JOB_ID = "xial_import";
 
@@ -99,9 +101,9 @@ class ilIssueAnalysisImportJob extends ilCronJob
     /**
      * Get default schedule type
      */
-    public function getDefaultScheduleType(): CronJobScheduleType
+    public function getDefaultScheduleType(): JobScheduleType
     {
-        return CronJobScheduleType::SCHEDULE_TYPE_IN_MINUTES;
+        return JobScheduleType::IN_MINUTES;
     }
 
     /**
@@ -131,9 +133,9 @@ class ilIssueAnalysisImportJob extends ilCronJob
     /**
      * Run the cron job
      */
-    public function run(): ilCronJobResult
+    public function run(): JobResult
     {
-        $result = new ilCronJobResult();
+        $result = new JobResult();
 
         try {
             $this->logger->info('Starting IssueAnalysis cron import');
@@ -142,7 +144,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
             $import_result = $this->importer->importLogs(true);
 
             if ($import_result['success']) {
-                $result->setStatus(ilCronJobResult::STATUS_OK);
+                $result->setStatus(JobResult::STATUS_OK);
                 $message = sprintf(
                     'Import successful: %d new entries imported, %d skipped, %d processed total',
                     $import_result['imported'],
@@ -152,7 +154,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
                 $result->setMessage($message);
                 $this->logger->info($message);
             } else {
-                $result->setStatus(ilCronJobResult::STATUS_CRASHED);
+                $result->setStatus(JobResult::STATUS_CRASHED);
                 $message = sprintf(
                     'Import completed with errors: %d imported, %d errors. Error messages: %s',
                     $import_result['imported'],
@@ -164,7 +166,7 @@ class ilIssueAnalysisImportJob extends ilCronJob
             }
 
         } catch (Exception $e) {
-            $result->setStatus(ilCronJobResult::STATUS_CRASHED);
+            $result->setStatus(JobResult::STATUS_CRASHED);
             $error_message = 'IssueAnalysis cron import failed: ' . $e->getMessage();
             $result->setMessage($error_message);
             $this->logger->error($error_message, ['exception' => $e]);

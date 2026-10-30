@@ -121,8 +121,8 @@ class ilIssueAnalysisConfigGUI extends ilPluginConfigGUI
 
             $this->ctrl->setParameterByClass(ilAdministrationGUI::class, 'ref_id', SYSTEM_FOLDER_ID);
             $cron_link = $this->ctrl->getLinkTargetByClass(
-                [ilAdministrationGUI::class, ilObjSystemFolderGUI::class, ilCronManagerGUI::class],
-                'render'
+                [ilAdministrationGUI::class, ilObjCronGUI::class],
+                'view'
             );
             $this->ctrl->setParameterByClass(ilAdministrationGUI::class, 'ref_id', $current_ref_id);
 

@@ -16,6 +16,8 @@ declare(strict_types=1);
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/../bootstrap.php';
 
+use ILIAS\Cron\CronJob;
+
 /**
  * Cron job factory for IssueAnalysis plugin
  * Provides cron jobs for the plugin
@@ -27,7 +29,7 @@ class ilIssueAnalysisCronJobFactory
     /**
      * Get cron job instance by ID
      */
-    public function getInstance(string $job_id): ?ilCronJob
+    public function getInstance(string $job_id): ?CronJob
     {
         switch ($job_id) {
             case ilIssueAnalysisImportJob::CRON_JOB_ID:
@@ -41,7 +43,7 @@ class ilIssueAnalysisCronJobFactory
     /**
      * Get all available cron jobs
      *
-     * @return ilCronJob[]
+     * @return CronJob[]
      */
     public function getAll(): array
     {

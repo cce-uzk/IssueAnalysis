@@ -61,7 +61,7 @@ class ilIssueAnalysisTableGUI
 
         // The pagination of the data table does not show the number of entries,
         // so the number for the current filter is part of the title
-        $count = (int) $data_retrieval->getTotalRowCount(null, null);
+        $count = (int) $data_retrieval->getTotalRowCount(null, null, null);
         $title = sprintf(
             $this->plugin->txt($count === 1 ? 'table_title_one_entry' : 'table_title_entries'),
             $count
@@ -96,9 +96,9 @@ class ilIssueAnalysisTableGUI
 
         // Build table with actions
         $table = $this->ui_factory->table()->data(
+            $data_retrieval,
             $title,
-            $columns,
-            $data_retrieval
+            $columns
         );
 
         $actions = $this->createActions();
@@ -204,8 +204,9 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
         array $visible_column_ids,
         \ILIAS\Data\Range $range,
         \ILIAS\Data\Order $order,
-        ?array $filter_data,
-        ?array $additional_parameters
+        mixed $additional_viewcontrol_data,
+        mixed $filter_data,
+        mixed $additional_parameters
     ): \Generator {
         // Convert filter data to repo format
         $filter = [];
@@ -307,8 +308,9 @@ class ilIssueAnalysisTableDataRetrieval implements \ILIAS\UI\Component\Table\Dat
      * @param array<string, mixed>|null $additional_parameters
      */
     public function getTotalRowCount(
-        ?array $filter_data,
-        ?array $additional_parameters
+        mixed $additional_viewcontrol_data,
+        mixed $filter_data,
+        mixed $additional_parameters
     ): ?int {
         // Convert filter data to repo format (same logic as getRows)
         $filter = [];

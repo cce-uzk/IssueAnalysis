@@ -692,7 +692,7 @@ class ilIssueAnalysisGUI
         return [
             $this->createCopyButton($this->plugin->txt('detail_copy_original'), $content_id),
             $this->createCopyButton($this->plugin->txt('detail_copy_safe_sharing'), $share_id),
-            $this->ui_factory->legacy($template->get())
+            $this->ui_factory->legacy()->content($template->get())
         ];
     }
 

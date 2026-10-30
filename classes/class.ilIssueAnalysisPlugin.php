@@ -16,6 +16,8 @@ declare(strict_types=1);
 // Load plugin bootstrap (includes Composer autoloader)
 require_once __DIR__ . '/bootstrap.php';
 
+use ILIAS\Cron\CronJob;
+use ILIAS\Cron\Job\JobProvider;
 
 /**
  * Class ilIssueAnalysisPlugin
@@ -23,7 +25,7 @@ require_once __DIR__ . '/bootstrap.php';
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
-class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJobProvider
+class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements JobProvider
 {
     private const PLUGIN_ID = "xial";
     private const PLUGIN_NAME = "IssueAnalysis";
@@ -157,7 +159,7 @@ class ilIssueAnalysisPlugin extends ilUserInterfaceHookPlugin implements ilCronJ
     /**
      * Get cron job instance by ID
      */
-    public function getCronJobInstance(string $jobId): ilCronJob
+    public function getCronJobInstance(string $jobId): CronJob
     {
         $factory = new ilIssueAnalysisCronJobFactory();
         $job = $factory->getInstance($jobId);
