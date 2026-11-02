@@ -46,7 +46,7 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
    public/Customizing/global/plugins/Services/UIComponent/UserInterfaceHook/IssueAnalysis/
    ```
 
-   e.g. with `git clone https://github.com/cce-uzk/IssueAnalysis.git IssueAnalysis`.
+   e.g. with `git clone -b release_11 https://github.com/cce-uzk/IssueAnalysis.git IssueAnalysis`.
 2. In the ILIAS root directory run `composer du` so that the ILIAS class map contains the plugin classes.
 3. Administration → Extending ILIAS → Plugins: install and activate **IssueAnalysis**. The database tables are created by `sql/dbupdate.php`.
 4. Make sure the error log directory is configured (see below). The menu entry **Issue Analysis** appears in the Administration menu.
